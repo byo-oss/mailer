@@ -1,0 +1,78 @@
+{
+  "name": "@byo-oss/mailer",
+  "version": "0.1.0",
+  "description": "A tiny email-sender interface for better-auth plugins, with a Wraps adapter and a test suite.",
+  "license": "MIT",
+  "author": "Jarod Stewart",
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./wraps": {
+      "types": "./dist/wraps.d.ts",
+      "import": "./dist/wraps.js",
+      "require": "./dist/wraps.cjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "keywords": [
+    "better-auth",
+    "byo",
+    "email",
+    "mailer",
+    "wraps"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/byo-oss/mailer"
+  },
+  "homepage": "https://github.com/byo-oss/mailer#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@wraps.dev/email": ">=0.15.0",
+    "vitest": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "@wraps.dev/email": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^22",
+    "@wraps.dev/email": "^0.15.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9",
+    "vitest": "^4.1.10"
+  }
+}
