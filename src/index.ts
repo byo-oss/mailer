@@ -18,7 +18,11 @@ export type MailMessage = {
 
 /** What a successful `send` returns. */
 export type MailResult = {
-  /** The provider's id for the send (for SES, the SES message id). */
+  /**
+   * The provider's id for the send when it reports one (for SES, the SES
+   * message id); otherwise an id the adapter makes up (`emailSdkMailer`:
+   * `"<adapter>:<uuid>"`).
+   */
   id: string;
   /**
    * The RFC 5322 `Message-ID` actually sent, when the provider reports it.

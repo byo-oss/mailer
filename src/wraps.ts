@@ -1,4 +1,5 @@
 import type { WrapsEmailConfig } from "@wraps.dev/email";
+import { copyHeaders } from "./headers";
 import {
   type Mailer,
   type MailMessage,
@@ -29,24 +30,6 @@ export type WrapsMailerOptions = Omit<Partial<WrapsEmailConfig>, "client"> & {
    */
   client?: WrapsMailerClient;
 };
-
-// Set by SES or the SDK; the SDK rejects them in `headers` too. Checked here
-// first so the error is the same whatever client is behind it.
-const RESERVED_HEADERS = new Set([
-  "from",
-  "to",
-  "cc",
-  "bcc",
-  "reply-to",
-  "subject",
-  "date",
-  "message-id",
-  "mime-version",
-  "content-type",
-  "content-transfer-encoding",
-  "return-path",
-  "sender",
-]);
 
 // SES codes that describe this one message, so sending it again fails the same
 // way. Account-level problems (sending paused, unverified sender) are left out
@@ -144,21 +127,4 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
       return { id: result.messageId };
     },
   };
-}
-
-function copyHeaders(
-  headers: Record<string, string> | undefined,
-): Record<string, string> | undefined {
-  if (!headers) return undefined;
-  const copy: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers)) {
-    if (RESERVED_HEADERS.has(name.toLowerCase())) {
-      throw new PermanentMailError(
-        `"${name}" is set by the mailer or the provider and can't be passed in headers` +
-          (name.toLowerCase() === "reply-to" ? " (use `replyTo`)" : ""),
-      );
-    }
-    copy[name] = value;
-  }
-  return Object.keys(copy).length > 0 ? copy : undefined;
 }
