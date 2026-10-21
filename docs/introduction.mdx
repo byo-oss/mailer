@@ -1,0 +1,51 @@
+---
+title: Introduction
+description: A tiny email-sender interface for better-auth plugins, with Wraps, AWS SES and email-sdk adapters.
+group: get started
+order: 1
+---
+
+`@byo-oss/mailer` is the shared email sender for BYO packages such as `@byo-oss/support`. A package takes a `Mailer`, so you choose how mail goes out, and the package never imports a provider SDK.
+
+> Community plugin — not affiliated with the better-auth team.
+
+## The interface
+
+```ts
+type Mailer = {
+  send(message: MailMessage): Promise<MailResult>;
+};
+
+type MailMessage = {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text: string;
+  replyTo?: string;
+  headers?: Record<string, string>;
+};
+
+type MailResult = { id: string; messageId?: string };
+```
+
+A send that throws is retried by the caller. A send that throws `PermanentMailError` is marked failed. See [Delivery semantics](/docs/mailer/delivery).
+
+## Adapters
+
+Each adapter is its own subpath, and its provider SDK is an optional peer dependency, so you install only the one you use.
+
+| Adapter | From | Sends through |
+|---|---|---|
+| [`wrapsMailer`](/docs/mailer/wraps) | `@byo-oss/mailer/wraps` | Your own AWS SES account, with `@wraps.dev/email`. The default for BYO packages. |
+| [`sesMailer`](/docs/mailer/ses) | `@byo-oss/mailer/ses` | An `SESv2Client` your app already has, from `@aws-sdk/client-sesv2`. |
+| [`emailSdkMailer`](/docs/mailer/email-sdk) | `@byo-oss/mailer/email-sdk` | A client you build with `@opencoredev/email-sdk`: Resend, Postmark, SendGrid, SMTP and more. |
+| [`memoryMailer`](/docs/mailer/testing) | `@byo-oss/mailer` | Nowhere. It records messages, for tests and local development. |
+
+Any other provider can be a [community adapter](/docs/mailer/testing#write-your-own-adapter) that passes the contract suite.
+
+## What this is not (yet)
+
+- Not a template or rendering library. You pass finished `html` and `text`.
+- No cc, bcc, attachments, tags or batch sending.
+- No queue, retries or backoff. The package that calls `send` owns those; the mailer only says which errors to retry.
+- No inbound mail. That belongs to the package that receives it.

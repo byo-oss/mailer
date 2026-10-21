@@ -1,0 +1,50 @@
+---
+title: Wraps
+description: Send through your own AWS SES account with wrapsMailer and @wraps.dev/email.
+group: guides
+order: 1
+---
+
+`wrapsMailer` sends through AWS SES from your own account, with [`@wraps.dev/email`](https://wraps.dev). It is the default adapter for BYO packages.
+
+```sh
+npm install @byo-oss/mailer @wraps.dev/email
+```
+
+```ts title="lib/mailer.ts"
+import { wrapsMailer } from "@byo-oss/mailer/wraps";
+
+export const mailer = wrapsMailer({ from: "Acme Support <help@acme.com>" });
+```
+
+## Options
+
+| Option | Default | |
+|---|---|---|
+| `from` | required | Sender address, verified in SES: `"Acme <help@acme.com>"`. |
+| `client` | a `WrapsEmail` built from the options below | A configured `new WrapsEmail({ ... })`, or any `{ send }` with the same shape (a fake, in tests). When set, the options below are ignored and results have no `messageId`. |
+| `region`, `credentials`, `roleArn`, ... | from the environment | Any other `@wraps.dev/email` config (`WrapsEmailConfig`), used to build the default client on the first send. |
+
+If what you have is an SES v1 `SESClient`, wrap it: `wrapsMailer({ from, client: new WrapsEmail({ client: sesClient }) })`. For an SES v2 `SESv2Client`, use [`sesMailer`](/docs/mailer/ses).
+
+## Errors
+
+| The SDK throws | Result |
+|---|---|
+| A validation error (malformed address, bad header), SES `MessageRejected` or `InvalidParameterValue`. | `PermanentMailError` |
+| Anything else: throttling, network errors, missing credentials, a sender that isn't verified yet. | Rethrown, so it retries once you fix the account |
+
+Headers SES owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
+
+## Result
+
+`wrapsMailer` returns `{ id, messageId }`. `id` is the SES message id.
+
+SES replaces any `Message-ID` header with its own ([AWS](https://docs.aws.amazon.com/ses/latest/dg/header-fields.html): "If you provide a Message-ID header, Amazon SES overrides the header with its own value"). In us-east-1 that header is `<id@email.amazonses.com>`, and that is `messageId`. AWS doesn't document the header's host, so it comes from real sends, and only us-east-1 has been checked.
+
+`messageId` is left out:
+
+- in any other region;
+- when the region isn't known. It comes from the `region` option, else `AWS_REGION` or `AWS_DEFAULT_REGION`. A region set only in an AWS profile isn't read, so set one of those;
+- when `endpoint` is set (LocalStack, a proxy);
+- when you pass `client`, because its region can't be read.

@@ -1,0 +1,82 @@
+---
+title: email-sdk
+description: Send through Resend, Postmark, SendGrid, SMTP and other providers with emailSdkMailer and an email-sdk client.
+group: guides
+order: 3
+---
+
+`emailSdkMailer` sends through a client you build with [email-sdk](https://email-sdk.dev), so any of its adapters that can carry replies works: Resend, Postmark, SendGrid, Mailgun, SMTP and more.
+
+```sh
+npm install @byo-oss/mailer @opencoredev/email-sdk
+```
+
+`@opencoredev/email-sdk` is an optional peer dependency, `^3`. The mailer never imports it: you build the client and pass it in.
+
+```ts title="lib/mailer.ts"
+import { createEmailClient } from "@opencoredev/email-sdk";
+import { resend } from "@opencoredev/email-sdk/resend";
+import { emailSdkMailer } from "@byo-oss/mailer/email-sdk";
+
+export const mailer = emailSdkMailer({
+  from: "Acme Support <help@acme.com>",
+  client: createEmailClient({
+    adapters: [resend({ apiKey: process.env.RESEND_API_KEY! })],
+    telemetry: false,
+  }),
+});
+```
+
+The sender must be verified with your provider.
+
+## Options
+
+| Option | Default | |
+|---|---|---|
+| `from` | required | Sender address, verified with your provider: `"Acme <help@acme.com>"`. Set on every message. |
+| `client` | required | The result of `createEmailClient(...)`, or any object with `adapters` and `send` (a fake, in tests). It is checked when the mailer is created. |
+
+## Supported adapters
+
+BYO packages send `In-Reply-To` and `References` headers, and put a routing token in `replyTo`. An adapter has to carry both, so `emailSdkMailer` supports only these:
+
+resend, postmark, sendgrid, cloudflare, unosend, ses, mailgun, mailersend, brevo, sparkpost, jetemail, lettermint, lettr, plunk, mailtrap, scaleway, smtp, helo.
+
+`memory`, email-sdk's test adapter, is also accepted, for tests. The list is exported as `SUPPORTED_ADAPTERS`.
+
+These can't carry both fields, so they are not supported: mailchimp, iterable, loops, sequenzy, primitive, zeptomail, mailpace. Neither is graph (Microsoft Graph), which only accepts `x-` headers, or sendheron, which takes one recipient.
+
+`emailSdkMailer` reads `client.adapters` when it is created and throws a `TypeError` if any adapter is not on the list. The message names the unsupported adapters and lists the supported ones. A renamed `smtp({ name })` is rejected too, so keep the default name.
+
+<Callout kind="note">
+Some supported adapters still limit what a message holds, and those sends fail with a `PermanentMailError`: lettr rejects `List-Unsubscribe`, `List-Unsubscribe-Post` and more than 10 headers; cloudflare and lettr reject display-name recipients (`"Alice <alice@example.com>"`); jetemail needs a display name in `from`.
+</Callout>
+
+## Errors
+
+email-sdk wraps adapter failures in a route error, so the mapping looks at every failure inside it, not only the outer error.
+
+| `client.send` throws | Result |
+|---|---|
+| A validation error (no recipient, bad address, repeated header name). | `PermanentMailError` |
+| A route error, or all-recipients-failed, where every failure is permanent by the next row. | `PermanentMailError` |
+| One adapter error that is not marked retryable and has status 400 or 422. | `PermanentMailError` |
+| Anything else: 401, 403, 404, 429, 5xx, no status, a 400 or 422 the adapter marks retryable, an unknown adapter, a middleware error, an abort, a non-SDK error. | Rethrown, so it retries |
+
+Any failure inside a route error that isn't a permanent 400 or 422 makes the whole send retry. Errors without an HTTP status, such as an SMTP server's 5xx reply or Lettr rejecting every recipient, are retried until the caller gives up. email-sdk's own retry is off by default. If you turn it on, a send is retried there and again by the caller.
+
+<Callout kind="warning">
+A 400 or 422 is permanent even when the provider uses it for an account problem (SES: sending paused, MAIL FROM domain not verified; Postmark: account pending approval). The adapters don't say which it was, so unlike `wrapsMailer` and `sesMailer`, those sends are not retried after you fix the account.
+</Callout>
+
+Headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
+
+## Result
+
+`emailSdkMailer` returns `{ id }` where `id` is the adapter's id for the send. Some adapters don't report one; then it returns `"<adapter>:<uuid>"` rather than throwing, because a throw would retry the send and could deliver it twice.
+
+It leaves `messageId` out: most adapters don't report the `Message-ID` they sent. email-sdk's `ses` adapter doesn't either, so use [`wrapsMailer`](/docs/mailer/wraps) or [`sesMailer`](/docs/mailer/ses) when you need it.
+
+## Telemetry
+
+The email-sdk client sends opt-out usage telemetry (adapter names, counts, redacted errors; no message content or addresses) and stores an id under your home directory. Turn it off with `createEmailClient({ telemetry: false })`, or set `EMAIL_SDK_TELEMETRY=0` or `DO_NOT_TRACK=1`. `emailSdkMailer` doesn't enforce this, because you build the client.

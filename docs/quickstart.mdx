@@ -1,0 +1,55 @@
+---
+title: Quickstart
+description: Install the mailer, create one with Wraps, and hand it to the BYO package that sends mail.
+group: get started
+order: 2
+---
+
+This sets up a mailer that sends through your own AWS SES account with [Wraps](https://wraps.dev), the default for BYO packages. To send through an SES client you already have, see [Your own SES client](/docs/mailer/ses). For Resend, Postmark, SMTP and others, see [email-sdk](/docs/mailer/email-sdk).
+
+<Steps>
+
+### Install
+
+```sh
+npm install @byo-oss/mailer @wraps.dev/email
+```
+
+`@wraps.dev/email` is an optional peer dependency: only the Wraps adapter needs it.
+
+### Create a mailer
+
+From a server file:
+
+```ts title="lib/mailer.ts"
+import { wrapsMailer } from "@byo-oss/mailer/wraps";
+
+export const mailer = wrapsMailer({ from: "Acme Support <help@acme.com>" });
+```
+
+The sender address (or its domain) must be verified in your SES account. AWS credentials come from the environment, or pass `region`, `credentials` or a ready-made `client` (see [Wraps](/docs/mailer/wraps)).
+
+### Hand it to the package that sends mail
+
+```ts title="lib/auth.ts"
+import { support } from "@byo-oss/support";
+import { mailer } from "./mailer";
+
+betterAuth({ plugins: [support({ mailer /* ... */ })] });
+```
+
+### Or call it yourself
+
+```ts
+const { id } = await mailer.send({
+  to: "alice@example.com",
+  subject: "Your ticket was updated",
+  html: "<p>We replied to your ticket.</p>",
+  text: "We replied to your ticket.",
+  replyTo: "support+t0k3n@reply.acme.com",
+});
+```
+
+</Steps>
+
+In tests, swap in [`memoryMailer`](/docs/mailer/testing), which records messages instead of sending them.

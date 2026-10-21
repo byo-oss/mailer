@@ -1,0 +1,33 @@
+---
+title: API
+description: Every export of @byo-oss/mailer and the subpath it comes from.
+group: reference
+order: 2
+---
+
+Each adapter is its own subpath, so the root export never loads a provider SDK.
+
+| Export | From | What it is |
+|---|---|---|
+| `Mailer` | `@byo-oss/mailer` | Type: `{ send(message: MailMessage): Promise<MailResult> }`. |
+| `MailMessage` | `@byo-oss/mailer` | Type: `{ to: string \| string[]; subject; html; text; replyTo?; headers? }`. |
+| `MailResult` | `@byo-oss/mailer` | Type: `{ id: string; messageId?: string }`. See [Delivery semantics](/docs/mailer/delivery#result). |
+| `PermanentMailError` | `@byo-oss/mailer` | Class. Thrown from `send` for a send that can never succeed. |
+| `isPermanentMailError(error)` | `@byo-oss/mailer` | Guard for it that also works when two copies of this package are installed. |
+| `memoryMailer(options?)` | `@byo-oss/mailer` | A `Mailer` that records messages in `.sent` (copies), for tests and local development. Also `.clear()` and `.fail`. See [Testing](/docs/mailer/testing). |
+| `wrapsMailer(options)` | `@byo-oss/mailer/wraps` | A `Mailer` that sends through AWS SES with `@wraps.dev/email`. See [Wraps](/docs/mailer/wraps). |
+| `sesMailer(options)` | `@byo-oss/mailer/ses` | A `Mailer` that sends through your `SESv2Client` with `SendEmail`. See [Your own SES client](/docs/mailer/ses). |
+| `emailSdkMailer(options)` | `@byo-oss/mailer/email-sdk` | A `Mailer` that sends through an `@opencoredev/email-sdk` client. See [email-sdk](/docs/mailer/email-sdk). |
+| `SUPPORTED_ADAPTERS` | `@byo-oss/mailer/email-sdk` | `readonly string[]`: the email-sdk adapter names `emailSdkMailer` accepts. |
+| `testMailer(factory, { failing, permanentlyFailing? })` | `@byo-oss/mailer/testing` | The contract test suite, for vitest. ESM only. |
+
+## Peer dependencies
+
+All optional. Install the one your adapter needs.
+
+| Package | Range | Needed by |
+|---|---|---|
+| `@wraps.dev/email` | `>=0.15.0` | `wrapsMailer` |
+| `@aws-sdk/client-sesv2` | `^3.527.0` | `sesMailer` |
+| `@opencoredev/email-sdk` | `^3.0.0` | `emailSdkMailer` (you build the client; the mailer doesn't import it) |
+| `vitest` | `>=3` | `testMailer` |

@@ -1,0 +1,44 @@
+---
+title: Testing and your own adapter
+description: Use memoryMailer in tests, and run the contract suite against an adapter you write.
+group: guides
+order: 4
+---
+
+`memoryMailer` records messages instead of sending them. `testMailer` is the contract suite every first-party adapter runs, and any adapter you write should pass it too.
+
+## In tests
+
+```ts
+import { memoryMailer } from "@byo-oss/mailer";
+
+const mailer = memoryMailer();
+await doSomethingThatSendsMail(mailer);
+expect(mailer.sent[0]?.to).toBe("alice@example.com");
+```
+
+`mailer.sent` holds copies of each message. `mailer.clear()` empties it.
+
+| Option | Default | |
+|---|---|---|
+| `fail` | none | `"retry"` makes every send throw a plain error; `"permanent"` throws a `PermanentMailError`. Also settable later as `mailer.fail`. |
+| `reportMessageId` | `false` | Also return a `messageId`, as a provider that reports it would. |
+
+## Write your own adapter
+
+Implement `Mailer` and run the contract suite against it, with vitest:
+
+```ts title="byo-mailer-postmark/src/mailer.test.ts"
+import { testMailer } from "@byo-oss/mailer/testing";
+import { postmarkMailer } from "./mailer";
+
+testMailer(() => postmarkMailer({ token: "test", fetch: okFetch }), {
+  failing: () => postmarkMailer({ token: "test", fetch: serverErrorFetch }),
+  permanentlyFailing: () =>
+    postmarkMailer({ token: "test", fetch: invalidAddressFetch }),
+});
+```
+
+`failing` is required, so the retry check always runs. `@byo-oss/mailer/testing` is ESM only.
+
+Community adapters are separate packages named `byo-mailer-<provider>` (or the same under your own scope), and depend on this package's types and nothing else of ours. Follow [Delivery semantics](/docs/mailer/delivery): throw to retry, throw `PermanentMailError` to fail, never change the message, and never copy `replyTo` into `headers`.

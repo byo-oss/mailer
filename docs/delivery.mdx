@@ -1,0 +1,30 @@
+---
+title: Delivery semantics
+description: What a throw, a PermanentMailError and a result mean, and the rules for replyTo and headers.
+group: reference
+order: 1
+---
+
+Every adapter follows the same rules, so a package that calls `send` can retry without knowing the provider.
+
+## Errors
+
+- **Throw means retry.** Any error thrown from `send` tells the caller to try again later (a timeout, throttling, missing credentials, an unverified sender).
+- **`PermanentMailError` means fail.** It is thrown for a send that can never succeed, such as an invalid address or a message the provider rejected. The caller marks it failed without retrying. Check for it with `isPermanentMailError(error)`, which also works when two copies of this package are installed.
+- **At-least-once.** A caller can repeat a send after a crash that came after the provider accepted it, so a recipient can rarely get a duplicate. A mailer doesn't have to be idempotent.
+- **The mailer never changes the message** it's given.
+
+Each adapter's own error mapping is on its page: [Wraps](/docs/mailer/wraps#errors), [your own SES client](/docs/mailer/ses#errors), [email-sdk](/docs/mailer/email-sdk#errors).
+
+## `replyTo` and `headers`
+
+`replyTo` is its own field. Adapters map it to the provider's reply-to option and never copy it into `headers`.
+
+`headers` is for extras such as `In-Reply-To`, `References` or `List-Unsubscribe`. `wrapsMailer`, `sesMailer` and `emailSdkMailer` reject the headers the provider owns (`From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, `Return-Path`, `Sender`) with a `PermanentMailError`.
+
+## Result
+
+`send` resolves to `{ id, messageId? }`.
+
+- `id` is the provider's id for the send when the provider reports one. When it doesn't, `emailSdkMailer` makes up `"<adapter>:<uuid>"` and `sesMailer` makes up `"ses:<uuid>"`, rather than throwing, which would send the message again.
+- `messageId` is the RFC 5322 `Message-ID` actually sent, with angle brackets, only when the adapter knows it: `wrapsMailer` and `sesMailer` in us-east-1. See [Wraps](/docs/mailer/wraps#result).
