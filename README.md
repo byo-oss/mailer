@@ -2,6 +2,8 @@
 
 A tiny email-sender interface for [better-auth](https://better-auth.com) plugins, with a [Wraps](https://wraps.dev) adapter, an in-memory mailer and a contract test suite.
 
+> Community plugin — not affiliated with the better-auth team.
+
 This is the shared mailer used by BYO packages (for example `@byo-oss/support`). A plugin takes a `Mailer`, so you choose how mail goes out, and the plugin never imports a provider SDK.
 
 ## Install
@@ -128,8 +130,6 @@ testMailer(() => postmarkMailer({ token: "test", fetch: okFetch }), {
 - No queue, retries or backoff. The package that calls `send` owns those; this only says which errors to retry.
 - No inbound mail. That belongs to the package that receives it.
 - Wraps (AWS SES) is the only first-party adapter.
-
-> Community plugin — not affiliated with the better-auth team.
 
 ## License
 
