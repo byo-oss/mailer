@@ -5,6 +5,7 @@ A `Mailer` is `{ send(message): Promise<{ id: string; messageId?: string }> }`. 
 ## Using a mailer
 
 - Server: `import { wrapsMailer } from "@byo-oss/mailer/wraps"` and `wrapsMailer({ from: "Name <addr@verified-domain>" })`. Needs `npm install @wraps.dev/email` and a sender verified in SES. Pass the result to the package that wants a `mailer`.
+- Server, other providers: `emailSdkMailer({ from, client })` from `@byo-oss/mailer/email-sdk`, with `client: createEmailClient({ adapters: [...], telemetry: false })` from `@opencoredev/email-sdk`. Supported adapters only (`SUPPORTED_ADAPTERS`); it throws a `TypeError` for the rest. Pass `telemetry: false`.
 - Tests: `memoryMailer()` from `@byo-oss/mailer`. Read what was sent from `.sent`; set `.fail = "retry" | "permanent"` to simulate failures.
 - `MailMessage` is `{ to, subject, html, text, replyTo?, headers? }`. Send both `html` and `text`. Put the reply address in `replyTo`, never in `headers`.
 - Don't rely on `messageId` in the result: most mailers (including `wrapsMailer`) omit it. `id` is always there.
@@ -24,6 +25,8 @@ A `Mailer` is `{ send(message): Promise<{ id: string; messageId?: string }> }`. 
 
 - `pnpm install`, then `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 - `@wraps.dev/email` is imported only in `src/wraps.ts`, and only dynamically on the first send. `vitest` is imported only in `src/testing.ts`. Keep both out of `src/index.ts`.
+- `src/email-sdk.ts` never imports `@opencoredev/email-sdk`: the user passes the client, typed by shape (`EmailSdkMailerClient`). Only `src/email-sdk.test.ts` imports it (dev dependency). Keep it out of `src/index.ts`.
+- `src/headers.ts` holds the reserved-header list, shared by both adapters.
 - `./testing` is ESM only because it imports vitest.
 - A public change (exports, types, error behaviour) updates the README in the same change.
 - Follow the BYO conventions: https://github.com/byo-oss/conventions/blob/main/SPEC.md
