@@ -36,6 +36,10 @@ If what you have is an SES v1 `SESClient`, wrap it: `wrapsMailer({ from, client:
 
 Headers SES owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
 
+<Next>
+So are malformed headers, and a non-ASCII display name in `from` is sent RFC 2047 encoded. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
+</Next>
+
 ## Result
 
 `wrapsMailer` returns `{ id, messageId }`. `id` is the SES message id.
@@ -48,3 +52,9 @@ SES replaces any `Message-ID` header with its own ([AWS](https://docs.aws.amazon
 - when the region isn't known. It comes from the `region` option, else `AWS_REGION` or `AWS_DEFAULT_REGION`. A region set only in an AWS profile isn't read, so set one of those;
 - when `endpoint` is set (LocalStack, a proxy);
 - when you pass `client`, because its region can't be read.
+
+<Next>
+It is also left out when `AWS_ENDPOINT_URL`, `AWS_ENDPOINT_URL_SES` or `AWS_ENDPOINT_URL_SESV2` is set, since the AWS SDK sends there instead of SES. An endpoint set only in an AWS profile isn't read.
+
+If the client returns no message id after SES accepted the send, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again. (`@wraps.dev/email` itself throws when SES returns no id, which retries the send.)
+</Next>

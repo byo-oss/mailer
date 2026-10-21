@@ -1,11 +1,11 @@
-import { copyHeaders } from "./headers";
+import { copyHeaders, encodeFrom } from "./headers";
 import {
   type Mailer,
   type MailMessage,
   type MailResult,
   PermanentMailError,
 } from "./index";
-import { sesMessageId } from "./ses-message-id";
+import { madeUpSesId, sesMessageId } from "./ses-message-id";
 
 /** The part of the SES v2 `SendEmail` request this adapter sends. */
 export type SesSendEmailInput = {
@@ -66,11 +66,20 @@ function isPermanentSendError(error: unknown): boolean {
 
 // The region the client sent through, or undefined for a custom endpoint (not
 // SES writing the header), a client without a readable region, or any error:
-// the message is already accepted, so nothing here may throw.
+// the message is already accepted, so nothing here may throw. An endpoint set
+// in the environment, which the AWS SDK uses, doesn't show in the client's
+// config, so the variables are read here.
 async function regionOf(client: SesMailerClient): Promise<string | undefined> {
   try {
     const config = client.config;
-    if (!config || config.endpoint !== undefined || config.isCustomEndpoint) {
+    const env = globalThis.process?.env ?? {};
+    if (
+      !config ||
+      config.endpoint !== undefined ||
+      config.isCustomEndpoint ||
+      env.AWS_ENDPOINT_URL ||
+      env.AWS_ENDPOINT_URL_SESV2
+    ) {
       return undefined;
     }
     const region =
@@ -109,9 +118,14 @@ const getCommandClass = () => {
  * (`new SESv2Client(...)` from `@aws-sdk/client-sesv2`), with `SendEmail`.
  * Install the SDK alongside this package: `npm install @aws-sdk/client-sesv2`.
  *
+ * - A display name in `from` with non-ASCII characters is sent RFC 2047
+ *   encoded (`=?UTF-8?B?...?= <help@acme.com>`), as the SES v1 `SendEmail`
+ *   reference asks for `Source`.
  * - `replyTo` goes to `ReplyToAddresses`, never into `headers`.
  * - `headers` go to the simple message's `Headers`, except reserved ones
- *   (`Reply-To`, `Message-ID`, `From`, `Subject`, ...), which throw a
+ *   (`Reply-To`, `Message-ID`, `From`, `Subject`, ...) and malformed ones (a
+ *   name that isn't printable ASCII without `:`, a value with a line break,
+ *   another control character or non-ASCII text), which throw a
  *   {@link PermanentMailError}.
  * - A `BadRequestException` or `MessageRejected` throws a
  *   {@link PermanentMailError}, except a `MessageRejected` for an identity
@@ -122,9 +136,10 @@ const getCommandClass = () => {
  *   is the `Message-ID` SES wrote, `<id@email.amazonses.com>` in us-east-1.
  *   It is left out in other regions (AWS doesn't document the header's host,
  *   and only us-east-1 has been checked with real sends), for a custom
- *   `endpoint`, and for a client whose region can't be read. If SES returns
- *   no id, `id` is `"ses:<random uuid>"` rather than an error, which would
- *   send the message again.
+ *   `endpoint` (on the client, or in `AWS_ENDPOINT_URL` or
+ *   `AWS_ENDPOINT_URL_SESV2`), and for a client whose region can't be read.
+ *   If SES returns no id, `id` is `"ses:<random uuid>"` rather than an
+ *   error, which would send the message again.
  */
 export function sesMailer(options: SesMailerOptions): Mailer {
   const { from, client } = options;
@@ -135,12 +150,14 @@ export function sesMailer(options: SesMailerOptions): Mailer {
     );
   }
 
+  const fromAddress = encodeFrom(from);
+
   return {
     async send(message: MailMessage): Promise<MailResult> {
       const headers = copyHeaders(message.headers);
       const SendEmailCommand = await getCommandClass();
       const command = new SendEmailCommand({
-        FromEmailAddress: from,
+        FromEmailAddress: fromAddress,
         Destination: {
           ToAddresses: Array.isArray(message.to)
             ? [...message.to]
@@ -181,7 +198,7 @@ export function sesMailer(options: SesMailerOptions): Mailer {
       // the message was accepted: never throw from here on, or it is sent again
       const id = result?.MessageId;
       if (typeof id !== "string" || !id) {
-        return { id: `ses:${globalThis.crypto.randomUUID()}` };
+        return { id: madeUpSesId() };
       }
       const messageId = sesMessageId(id, await regionOf(client));
       return messageId ? { id, messageId } : { id };

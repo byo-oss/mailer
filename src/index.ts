@@ -1,3 +1,5 @@
+import { checkHeaders } from "./headers";
+
 /**
  * A message to send. The same shape for every provider.
  *
@@ -21,7 +23,7 @@ export type MailResult = {
   /**
    * The provider's id for the send when it reports one (for SES, the SES
    * message id); otherwise an id the adapter makes up (`emailSdkMailer`:
-   * `"<adapter>:<uuid>"`, `sesMailer`: `"ses:<uuid>"`).
+   * `"<adapter>:<uuid>"`, `sesMailer` and `wrapsMailer`: `"ses:<uuid>"`).
    */
   id: string;
   /**
@@ -116,7 +118,10 @@ export type MemoryMailer = Mailer & {
 
 /**
  * A mailer that sends nothing and records what it was given, for tests and
- * local development.
+ * local development. Like the adapters, it throws a
+ * {@link PermanentMailError} for a malformed header (a name that isn't
+ * printable ASCII without `:`, a value with a line break, another control
+ * character or non-ASCII text).
  *
  * ```ts
  * const mailer = memoryMailer();
@@ -137,6 +142,8 @@ export function memoryMailer(options: MemoryMailerOptions = {}): MemoryMailer {
       store.length = 0;
     },
     async send(message) {
+      // first, as an adapter checks before it calls the provider
+      checkHeaders(message.headers);
       if (this.fail === "permanent") {
         throw new PermanentMailError("memoryMailer: permanent failure");
       }

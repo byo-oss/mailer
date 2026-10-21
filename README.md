@@ -56,7 +56,7 @@ export const mailer = sesMailer({
 });
 ```
 
-It sends with SES v2 `SendEmail`. If what you have is an SES v1 `SESClient`, wrap it for the Wraps adapter instead: `wrapsMailer({ from, client: new WrapsEmail({ client: sesClient }) })`.
+It sends with SES v2 `SendEmail`. `sesMailer` is for apps that already own an `SESv2Client`. If you'd let `WrapsEmail` build the client, or your dev sink reads the SES v1 / `WrapsEmail` shape, use `wrapsMailer`: `sesMailer` gains you nothing there. If what you have is an SES v1 `SESClient`, wrap it for the Wraps adapter instead: `wrapsMailer({ from, client: new WrapsEmail({ client: sesClient }) })`.
 
 **Or with email-sdk.** You build the client and pass it in:
 
@@ -70,6 +70,7 @@ export const mailer = emailSdkMailer({
   from: "Acme Support <help@acme.com>",
   client: createEmailClient({
     adapters: [resend({ apiKey: process.env.RESEND_API_KEY! })],
+    // off: no usage events to email-sdk's authors, no id file, no notice
     telemetry: false,
   }),
 });
@@ -145,7 +146,7 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 |---|---|---|
 | `Mailer` | `@byo-oss/mailer` | Type: `{ send(message: MailMessage): Promise<MailResult> }`. |
 | `MailMessage` | `@byo-oss/mailer` | Type: `{ to: string \| string[]; subject; html; text; replyTo?; headers? }`. |
-| `MailResult` | `@byo-oss/mailer` | Type: `{ id: string; messageId?: string }`. `id` is the provider's id for the send when the provider reports one; `emailSdkMailer` makes up `"<adapter>:<uuid>"` (and `sesMailer` `"ses:<uuid>"`) when it doesn't. `messageId` is the RFC 5322 `Message-ID` actually sent, with angle brackets, only when the adapter knows it (`wrapsMailer` and `sesMailer` in us-east-1; see Delivery semantics). |
+| `MailResult` | `@byo-oss/mailer` | Type: `{ id: string; messageId?: string }`. `id` is the provider's id for the send when the provider reports one; `emailSdkMailer` makes up `"<adapter>:<uuid>"` (and `sesMailer` and `wrapsMailer` `"ses:<uuid>"`) when it doesn't. `messageId` is the RFC 5322 `Message-ID` actually sent, with angle brackets, only when the adapter knows it (`wrapsMailer` and `sesMailer` in us-east-1; see Delivery semantics). |
 | `PermanentMailError` | `@byo-oss/mailer` | Class. Throw it from `send` for a send that can never succeed. |
 | `isPermanentMailError(error)` | `@byo-oss/mailer` | Guard for it that also works when two copies of this package are installed. |
 | `memoryMailer(options?)` | `@byo-oss/mailer` | A `Mailer` that records messages in `.sent` (copies), for tests and local development. Also `.clear()` and `.fail`. |
@@ -156,6 +157,10 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 | `testMailer(factory, { failing, permanentlyFailing? })` | `@byo-oss/mailer/testing` | The contract test suite, for vitest. ESM only. |
 
 `replyTo` is its own field. Adapters map it to the provider's reply-to option and never copy it into `headers`. `headers` is for extras such as `In-Reply-To`, `References` or `List-Unsubscribe`; `wrapsMailer`, `sesMailer` and `emailSdkMailer` reject the headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) with a `PermanentMailError`.
+
+Header names and values follow RFC 5322. A name is printable ASCII (33–126) without `:`. A value is printable ASCII, spaces and tabs, on one line: no CR or LF (so no folding), no other control character and no non-ASCII text (RFC 2047-encode it first). Every mailer here, `memoryMailer` included, throws a `PermanentMailError` for anything else before it calls the provider. The contract suite checks the name rules and the line-break and control-character rules for values. A tab is valid RFC 5322 and passes this check, but SES rejects it in a value (`@wraps.dev/email` before sending, SES v2 by its `[ -~]*` value pattern), so `wrapsMailer` and `sesMailer` fail such a send with a `PermanentMailError` too.
+
+`wrapsMailer` and `sesMailer` send a display name in `from` that has non-ASCII characters as RFC 2047 encoded-words (`Société <help@acme.com>` goes out as `=?UTF-8?B?U29jacOpdMOp?= <help@acme.com>`), as the [SES v1 `SendEmail` reference](https://docs.aws.amazon.com/ses/latest/APIReference/API_SendEmail.html) asks for `Source`, and quote an ASCII name that needs it (`Acme, Inc.`). An ASCII name that already holds an encoded-word is sent as given. The address itself is sent as given.
 
 ## Delivery semantics
 
@@ -170,12 +175,16 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 
 - in any other region;
 - when the region isn't known: it comes from the `region` option, else `AWS_REGION` or `AWS_DEFAULT_REGION`. A region set only in an AWS profile (the shared AWS config file) isn't read, so set one of those;
-- when `endpoint` is set (LocalStack, a proxy);
+- when `endpoint` is set (LocalStack, a proxy), or `AWS_ENDPOINT_URL`, `AWS_ENDPOINT_URL_SES` or `AWS_ENDPOINT_URL_SESV2`, which the AWS SDK sends to. An endpoint set only in an AWS profile isn't read;
 - when you pass `client`: its region can't be read.
+
+If the client returns no message id after SES accepted the send, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again. (`@wraps.dev/email` itself throws when SES returns no id, which retries the send.)
 
 `sesMailer` maps `SendEmail` errors like this: `BadRequestException` and `MessageRejected` become a `PermanentMailError`, except a `MessageRejected` for an address or domain that isn't verified (or a sandboxed account). That one, and everything else (throttling, `LimitExceededException`, `SendingPausedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `NotFoundException`, network errors, missing credentials), is rethrown, so it retries once you fix the account.
 
-`sesMailer` returns `{ id, messageId }` the same way: `id` is the SES message id, and `messageId` is `<id@email.amazonses.com>` when the client's region is us-east-1. It is left out in other regions, with a custom `endpoint`, and for a client without a readable `config.region` (most dev sinks). If the client returns no `MessageId`, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again.
+`sesMailer` returns `{ id, messageId }` the same way: `id` is the SES message id, and `messageId` is `<id@email.amazonses.com>` when the client's region is us-east-1. It is left out in other regions, with a custom `endpoint` on the client or in `AWS_ENDPOINT_URL` or `AWS_ENDPOINT_URL_SESV2` (an endpoint set only in an AWS profile isn't read), and for a client without a readable `config.region` (most dev sinks). If the client returns no `MessageId`, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again.
+
+Confirmed with a real SES v2 simple send through `sesMailer` in us-east-1: the delivered `Message-ID` was the `messageId` it returned, and `In-Reply-To` and `References` arrived unchanged. A sender with a non-ASCII display name was accepted and delivered too, through `sesMailer` and `wrapsMailer`.
 
 `emailSdkMailer` maps errors like this. email-sdk wraps adapter failures in a route error, so the mapping looks at every failure inside it, not only the outer error.
 
@@ -226,7 +235,7 @@ testMailer(() => postmarkMailer({ token: "test", fetch: okFetch }), {
 });
 ```
 
-`failing` is required, so the retry check always runs. Community adapters are separate packages named `byo-mailer-<provider>` (or the same under your own scope), and depend on this package's types and nothing else of ours.
+`failing` is required, so the retry check always runs. The suite also sends malformed headers (a bad name, a value with CR, LF or another control character) and expects a `PermanentMailError` for each, so check `headers` before calling the provider. Community adapters are separate packages named `byo-mailer-<provider>` (or the same under your own scope), and depend on this package's types and nothing else of ours.
 
 ## What this is not (yet)
 

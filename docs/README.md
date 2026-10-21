@@ -25,7 +25,7 @@ Available without importing:
 
 - `<Callout kind="note">…</Callout>` (or `kind="warning"`)
 - `<Steps>…</Steps>`: each step starts with a `###` heading
-- `<Next>…</Next>`: anything merged to `main` but not yet on npm. The site labels it with `main`'s version and collapses it until the reader switches to the next version. Until the first release there is no npm version to be ahead of, so the pages use no `<Next>` blocks: everything here describes `main`.
+- `<Next>…</Next>`: anything merged to `main` but not yet on npm. The site labels it with `main`'s version and collapses it until the reader switches to the next version. After the release, remove the tags.
 
 Code fences take a file title: ```` ```ts title="lib/mailer.ts" ````. Shell blocks use `sh`, without a `$` prompt.
 

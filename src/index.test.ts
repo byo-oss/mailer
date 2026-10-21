@@ -135,4 +135,13 @@ describe("memoryMailer", () => {
     mailer.fail = undefined;
     await expect(mailer.send(message())).resolves.toEqual({ id: "mem-1" });
   });
+
+  it("rejects a malformed header as permanent and records nothing, as the adapters do", async () => {
+    const mailer = memoryMailer({ fail: "retry" });
+    const error = await mailer
+      .send({ ...message(), headers: { "X-Ticket": "1\r\nBcc: e@x.test" } })
+      .catch((e: unknown) => e);
+    expect(isPermanentMailError(error)).toBe(true);
+    expect(mailer.sent).toEqual([]);
+  });
 });

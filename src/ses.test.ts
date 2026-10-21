@@ -1,5 +1,5 @@
 import { type SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isPermanentMailError } from "./index";
 import { type SesMailerClient, type SesSendEmailInput, sesMailer } from "./ses";
 import { mailMessage, testMailer } from "./testing";
@@ -163,7 +163,57 @@ describe("sesMailer", () => {
     },
   );
 
+  it.each([
+    ["CRLF in a value", { "X-Ticket": "1\r\nBcc: eve@example.com" }],
+    ["a colon in a name", { "X-Ticket:": "1" }],
+    ["non-ASCII text in a value", { "X-Ticket": "Café" }],
+  ])("rejects %s as permanent, before any send", async (_, headers) => {
+    const { client, send } = fakeClient();
+    const error = await sesMailer({ from: "help@acme.test", client })
+      .send(mailMessage({ headers }))
+      .catch((e: unknown) => e);
+    expect(isPermanentMailError(error)).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  describe("from", () => {
+    const fromSent = async (from: string) => {
+      const { client, send } = fakeClient();
+      await sesMailer({ from, client }).send(mailMessage());
+      return inputOf(send).FromEmailAddress;
+    };
+
+    it("sends a non-ASCII display name RFC 2047 encoded", async () => {
+      expect(await fromSent("Société Générale <help@acme.test>")).toBe(
+        "=?UTF-8?B?U29jacOpdMOpIEfDqW7DqXJhbGU=?= <help@acme.test>",
+      );
+    });
+
+    it("quotes an ASCII display name that needs it", async () => {
+      expect(await fromSent("Acme, Inc. <help@acme.test>")).toBe(
+        '"Acme, Inc." <help@acme.test>',
+      );
+    });
+
+    it.each([
+      "help@acme.test",
+      "Acme Support <help@acme.test>",
+      '"Acme, Inc." <help@acme.test>',
+    ])("sends %s unchanged", async (from) => {
+      expect(await fromSent(from)).toBe(from);
+    });
+  });
+
   describe("the result", () => {
+    // a dev machine with an endpoint set must not change these results
+    beforeEach(() => {
+      vi.stubEnv("AWS_ENDPOINT_URL", undefined);
+      vi.stubEnv("AWS_ENDPOINT_URL_SESV2", undefined);
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
     it("in us-east-1, has the SES id and the Message-ID SES wrote", async () => {
       const { client } = fakeClient({ region: async () => "us-east-1" });
       const result = await sesMailer({ from: "help@acme.test", client }).send(
@@ -220,6 +270,20 @@ describe("sesMailer", () => {
       );
       expect(result).toEqual({ id: SES_ID });
     });
+
+    // the AWS SDK sends to these when set (LocalStack), but the client's
+    // config doesn't show it
+    it.each(["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_SESV2"])(
+      "has no messageId with %s set",
+      async (variable) => {
+        vi.stubEnv(variable, "http://localhost:4566");
+        const { client } = fakeClient({ region: async () => "us-east-1" });
+        const result = await sesMailer({ from: "help@acme.test", client }).send(
+          mailMessage(),
+        );
+        expect(result).toEqual({ id: SES_ID });
+      },
+    );
 
     it("makes up an id rather than throwing when SES returns none", async () => {
       const { client } = fakeClient({ reply: async () => ({}) });
@@ -301,11 +365,20 @@ describe("sesMailer", () => {
 // A real SESv2Client whose HTTP layer is stubbed: checks the SDK serializes
 // what the adapter builds (Headers included) and that its region is read.
 describe("sesMailer with a real SESv2Client", () => {
-  async function realClient(region: string) {
+  beforeEach(() => {
+    vi.stubEnv("AWS_ENDPOINT_URL", undefined);
+    vi.stubEnv("AWS_ENDPOINT_URL_SESV2", undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function realClient(region: string, extra: { endpoint?: string } = {}) {
     const { SESv2Client } = await import("@aws-sdk/client-sesv2");
     const requests: { hostname: string; path: string; body: string }[] = [];
     const client = new SESv2Client({
       region,
+      ...extra,
       credentials: { accessKeyId: "AKIDEXAMPLE", secretAccessKey: "secret" },
       requestHandler: {
         handle: async (request: {
@@ -350,6 +423,30 @@ describe("sesMailer with a real SESv2Client", () => {
     expect(body.ReplyToAddresses).toEqual([
       "support+token123@reply.example.com",
     ]);
+  });
+
+  it.each(["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_SESV2"])(
+    "sends to the endpoint in %s and returns no messageId",
+    async (variable) => {
+      vi.stubEnv(variable, "http://localhost:4566");
+      const { client, requests } = await realClient("us-east-1");
+      const result = await sesMailer({ from: "help@acme.test", client }).send(
+        mailMessage(),
+      );
+      expect(requests[0]?.hostname).toBe("localhost");
+      expect(result).toEqual({ id: SES_ID });
+    },
+  );
+
+  it("sends to an endpoint option and returns no messageId", async () => {
+    const { client, requests } = await realClient("us-east-1", {
+      endpoint: "http://localhost:4566",
+    });
+    const result = await sesMailer({ from: "help@acme.test", client }).send(
+      mailMessage(),
+    );
+    expect(requests[0]?.hostname).toBe("localhost");
+    expect(result).toEqual({ id: SES_ID });
   });
 
   it("returns no messageId in another region", async () => {

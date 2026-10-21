@@ -134,7 +134,9 @@ function permanentMessage(error: unknown): string {
  *   {@link PermanentMailError}.
  * - `replyTo` goes to the client's `replyTo`, never into `headers`.
  * - `headers` pass through as `[{ name, value }]`, except reserved ones
- *   (`Reply-To`, `Message-ID`, `From`, `Subject`, ...), which throw a
+ *   (`Reply-To`, `Message-ID`, `From`, `Subject`, ...) and malformed ones (a
+ *   name that isn't printable ASCII without `:`, a value with a line break,
+ *   another control character or non-ASCII text), which throw a
  *   {@link PermanentMailError}.
  * - A validation failure, or an adapter whose provider answered 400 or 422
  *   (from every adapter tried, when there's a fallback), throws a

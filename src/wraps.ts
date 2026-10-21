@@ -1,12 +1,12 @@
 import type { WrapsEmailConfig } from "@wraps.dev/email";
-import { copyHeaders } from "./headers";
+import { copyHeaders, encodeFrom } from "./headers";
 import {
   type Mailer,
   type MailMessage,
   type MailResult,
   PermanentMailError,
 } from "./index";
-import { sesMessageId } from "./ses-message-id";
+import { madeUpSesId, sesMessageId } from "./ses-message-id";
 
 /** The part of `WrapsEmail` this adapter uses, so tests can pass a fake. */
 export type WrapsMailerClient = {
@@ -65,9 +65,14 @@ function isPermanentSendError(error: unknown): boolean {
  * Mailer that sends through your own AWS SES account with `@wraps.dev/email`.
  * Install it alongside this package: `npm install @wraps.dev/email`.
  *
+ * - A display name in `from` with non-ASCII characters is sent RFC 2047
+ *   encoded (`=?UTF-8?B?...?= <help@acme.com>`), as the SES v1 `SendEmail`
+ *   reference asks for `Source`.
  * - `replyTo` goes to the SDK's reply-to option, never into `headers`.
  * - `headers` pass through, except reserved ones (`Reply-To`, `Message-ID`,
- *   `From`, `Subject`, ...), which throw a {@link PermanentMailError}.
+ *   `From`, `Subject`, ...) and malformed ones (a name that isn't printable
+ *   ASCII without `:`, a value with a line break, another control character
+ *   or non-ASCII text), which throw a {@link PermanentMailError}.
  * - A malformed address or other validation failure, and an SES
  *   `MessageRejected` or `InvalidParameterValue`, throw a
  *   {@link PermanentMailError}. Everything else (throttling, network errors,
@@ -79,11 +84,16 @@ function isPermanentSendError(error: unknown): boolean {
  *   isn't us-east-1 (AWS doesn't document the header's host, and only
  *   us-east-1 has been checked with real sends), when the region isn't known
  *   (it comes from `region`, else `AWS_REGION` or `AWS_DEFAULT_REGION`; not
- *   from an AWS profile), when `endpoint` is set, and when you pass `client`.
+ *   from an AWS profile), when `endpoint`, `AWS_ENDPOINT_URL`,
+ *   `AWS_ENDPOINT_URL_SES` or `AWS_ENDPOINT_URL_SESV2` is set, and when you
+ *   pass `client`. If the client
+ *   returns no id, `id` is `"ses:<random uuid>"` rather than an error, which
+ *   would send the message again.
  */
 export function wrapsMailer(options: WrapsMailerOptions): Mailer {
   const { from, client: injected, ...config } = options;
   if (!from) throw new TypeError("wrapsMailer: `from` is required");
+  const fromAddress = encodeFrom(from);
 
   let client: Promise<WrapsMailerClient> | undefined = injected
     ? Promise.resolve(injected)
@@ -91,7 +101,10 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
   // The region the client sends through, for `messageId`. Only known for a
   // client built here, resolved as WrapsEmail does (the option, then the
   // environment) when the client is built, minus its AWS profile lookup, which
-  // needs the AWS SDK. Unknown means no `messageId`, never a guess.
+  // needs the AWS SDK. Unknown means no `messageId`, never a guess. So does a
+  // custom endpoint, from the option or from the environment variables the
+  // AWS SDK reads: SES v1 today, plus SES v2 for a WrapsEmail that sends
+  // with an SESv2Client.
   let region: string | undefined;
   const getClient = () => {
     // imported on first send, so the peer dependency is only needed by apps
@@ -99,12 +112,16 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
     client ??= import("@wraps.dev/email").then(
       ({ WrapsEmail }) => {
         const env = globalThis.process?.env ?? {};
-        region = config.endpoint
-          ? undefined
-          : config.region ||
-            env.AWS_REGION ||
-            env.AWS_DEFAULT_REGION ||
-            undefined;
+        region =
+          config.endpoint ||
+          env.AWS_ENDPOINT_URL ||
+          env.AWS_ENDPOINT_URL_SES ||
+          env.AWS_ENDPOINT_URL_SESV2
+            ? undefined
+            : config.region ||
+              env.AWS_REGION ||
+              env.AWS_DEFAULT_REGION ||
+              undefined;
         return new WrapsEmail(config);
       },
       (error) => {
@@ -125,7 +142,7 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
       let result: { messageId: string };
       try {
         result = await wraps.send({
-          from,
+          from: fromAddress,
           to: Array.isArray(message.to) ? [...message.to] : message.to,
           subject: message.subject,
           html: message.html,
@@ -142,13 +159,11 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
         }
         throw error;
       }
-      if (typeof result?.messageId !== "string" || !result.messageId) {
-        throw new Error("wrapsMailer: the client returned no messageId");
-      }
-      const messageId = sesMessageId(result.messageId, region);
-      return messageId
-        ? { id: result.messageId, messageId }
-        : { id: result.messageId };
+      // the message was accepted: never throw from here on, or it is sent again
+      const id = result?.messageId;
+      if (typeof id !== "string" || !id) return { id: madeUpSesId() };
+      const messageId = sesMessageId(id, region);
+      return messageId ? { id, messageId } : { id };
     },
   };
 }

@@ -141,6 +141,36 @@ describe("wrapsMailer", () => {
     },
   );
 
+  it.each([
+    ["CRLF in a value", { "X-Ticket": "1\r\nBcc: eve@example.com" }],
+    ["a colon in a name", { "X-Ticket:": "1" }],
+    ["non-ASCII text in a value", { "X-Ticket": "Café" }],
+  ])("rejects %s as permanent, before any send", async (_, headers) => {
+    const send = vi.fn().mockResolvedValue(ok);
+    const mailer = wrapsMailer({ from: "help@acme.test", client: { send } });
+
+    const error = await mailer
+      .send(mailMessage({ headers }))
+      .catch((e: unknown) => e);
+
+    expect(isPermanentMailError(error)).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("sends a non-ASCII display name in from RFC 2047 encoded", async () => {
+    const send = vi.fn().mockResolvedValue(ok);
+    const mailer = wrapsMailer({
+      from: "Société Générale <help@acme.test>",
+      client: { send },
+    });
+
+    await mailer.send(mailMessage());
+
+    expect(send.mock.calls[0]?.[0].from).toBe(
+      "=?UTF-8?B?U29jacOpdMOpIEfDqW7DqXJhbGU=?= <help@acme.test>",
+    );
+  });
+
   it("points to replyTo when Reply-To is passed as a header", async () => {
     const mailer = wrapsMailer({
       from: "help@acme.test",
@@ -152,10 +182,14 @@ describe("wrapsMailer", () => {
   });
 
   describe("the result", () => {
-    // a CI or dev machine with AWS_REGION set must not change these results
+    // a CI or dev machine with AWS_REGION or an endpoint set must not change
+    // these results
     beforeEach(() => {
       vi.stubEnv("AWS_REGION", undefined);
       vi.stubEnv("AWS_DEFAULT_REGION", undefined);
+      vi.stubEnv("AWS_ENDPOINT_URL", undefined);
+      vi.stubEnv("AWS_ENDPOINT_URL_SES", undefined);
+      vi.stubEnv("AWS_ENDPOINT_URL_SESV2", undefined);
       built.configs.length = 0;
     });
     afterEach(() => {
@@ -210,6 +244,44 @@ describe("wrapsMailer", () => {
           endpoint: "http://localhost:4566",
         }),
       ).toEqual({ id: "ses-1" });
+    });
+
+    // the AWS SDK sends to these when set (LocalStack), and nothing in
+    // WrapsEmail's config says so
+    // _SESV2 too: a later @wraps.dev/email (the peer range is open) may send
+    // with an SESv2Client
+    it.each([
+      "AWS_ENDPOINT_URL",
+      "AWS_ENDPOINT_URL_SES",
+      "AWS_ENDPOINT_URL_SESV2",
+    ])("has no messageId with %s set", async (variable) => {
+      vi.stubEnv(variable, "http://localhost:4566");
+      expect(await sendWith({ region: "us-east-1" })).toEqual({
+        id: "ses-1",
+      });
+    });
+
+    // SES accepted the message: a throw would make the caller send it again
+    it.each([
+      ["no messageId", {}],
+      ["an empty messageId", { messageId: "" }],
+      ["nothing", undefined],
+    ])(
+      "makes up an id rather than throwing when the client returns %s",
+      async (_, reply) => {
+        const result = await sendWith({
+          client: { send: (async () => reply) as never },
+        });
+        expect(result.id).toMatch(/^ses:[0-9a-f-]{36}$/);
+        expect(result).not.toHaveProperty("messageId");
+      },
+    );
+
+    it("makes up an id on the built client in us-east-1 too, without a messageId", async () => {
+      vi.spyOn(built, "send").mockResolvedValueOnce({} as never);
+      const result = await sendWith({ region: "us-east-1" });
+      expect(result.id).toMatch(/^ses:[0-9a-f-]{36}$/);
+      expect(result).not.toHaveProperty("messageId");
     });
 
     it("has no messageId with an injected client, whatever the region", async () => {
@@ -293,16 +365,6 @@ describe("wrapsMailer", () => {
         expect(isPermanentMailError(caught)).toBe(false);
       },
     );
-
-    it("fails with a plain error if the client returns no messageId", async () => {
-      const mailer = wrapsMailer({
-        from: "help@acme.test",
-        client: { send: (async () => ({})) as never },
-      });
-      const caught = await mailer.send(mailMessage()).catch((e: unknown) => e);
-      expect(caught).toBeInstanceOf(Error);
-      expect(isPermanentMailError(caught)).toBe(false);
-    });
   });
 
   it("requires from", () => {

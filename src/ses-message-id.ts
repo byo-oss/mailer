@@ -4,7 +4,7 @@
 // "If you provide a Message-ID header, Amazon SES overrides the header with
 // its own value"), but AWS doesn't document the value. us-east-1 is listed
 // because real sends there were read back as `<SES message id>@email.amazonses.com`,
-// from both simple and raw sends. Other regions are left out until a send
+// from SES v1 and v2 simple sends and a raw send. Other regions are left out until a send
 // there is read back the same way: a guessed `Message-ID` would make replies
 // thread to a message that doesn't exist.
 const MESSAGE_ID_HOSTS: Readonly<Record<string, string>> = Object.freeze({
@@ -25,4 +25,13 @@ export function sesMessageId(
       ? MESSAGE_ID_HOSTS[region]
       : undefined;
   return host ? `<${id}@${host}>` : undefined;
+}
+
+/**
+ * The `id` to return when SES accepted a send but reported no message id:
+ * `"ses:<random uuid>"`. Throwing instead would make the caller send the
+ * message again.
+ */
+export function madeUpSesId(): string {
+  return `ses:${globalThis.crypto.randomUUID()}`;
 }

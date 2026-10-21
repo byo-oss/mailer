@@ -22,6 +22,7 @@ export const mailer = emailSdkMailer({
   from: "Acme Support <help@acme.com>",
   client: createEmailClient({
     adapters: [resend({ apiKey: process.env.RESEND_API_KEY! })],
+    // off: no usage events to email-sdk's authors, no id file, no notice
     telemetry: false,
   }),
 });
@@ -70,6 +71,10 @@ A 400 or 422 is permanent even when the provider uses it for an account problem 
 </Callout>
 
 Headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
+
+<Next>
+So are malformed headers. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
+</Next>
 
 ## Result
 

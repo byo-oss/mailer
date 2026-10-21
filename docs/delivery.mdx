@@ -22,9 +22,19 @@ Each adapter's own error mapping is on its page: [Wraps](/docs/mailer/wraps#erro
 
 `headers` is for extras such as `In-Reply-To`, `References` or `List-Unsubscribe`. `wrapsMailer`, `sesMailer` and `emailSdkMailer` reject the headers the provider owns (`From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, `Return-Path`, `Sender`) with a `PermanentMailError`.
 
+<Next>
+Header names and values follow RFC 5322. A name is printable ASCII (33–126) without `:`. A value is printable ASCII, spaces and tabs, on one line: no CR or LF (so no folding), no other control character and no non-ASCII text (RFC 2047-encode it first). Every mailer here, `memoryMailer` included, throws a `PermanentMailError` for anything else before it calls the provider. The [contract suite](/docs/mailer/testing#write-your-own-adapter) checks the name rules and the line-break and control-character rules for values. A tab is valid RFC 5322 and passes this check, but SES rejects it in a value (`@wraps.dev/email` before sending, SES v2 by its `[ -~]*` value pattern), so `wrapsMailer` and `sesMailer` fail such a send with a `PermanentMailError` too.
+
+`wrapsMailer` and `sesMailer` send a display name in `from` that has non-ASCII characters as RFC 2047 encoded-words (`Société <help@acme.com>` goes out as `=?UTF-8?B?U29jacOpdMOp?= <help@acme.com>`), as the [SES v1 `SendEmail` reference](https://docs.aws.amazon.com/ses/latest/APIReference/API_SendEmail.html) asks for `Source`, and quote an ASCII name that needs it (`Acme, Inc.`). An ASCII name that already holds an encoded-word is sent as given. The address itself is sent as given.
+</Next>
+
 ## Result
 
 `send` resolves to `{ id, messageId? }`.
 
 - `id` is the provider's id for the send when the provider reports one. When it doesn't, `emailSdkMailer` makes up `"<adapter>:<uuid>"` and `sesMailer` makes up `"ses:<uuid>"`, rather than throwing, which would send the message again.
 - `messageId` is the RFC 5322 `Message-ID` actually sent, with angle brackets, only when the adapter knows it: `wrapsMailer` and `sesMailer` in us-east-1. See [Wraps](/docs/mailer/wraps#result).
+
+<Next>
+`wrapsMailer` makes up `"ses:<uuid>"` too when its client returns no message id, instead of throwing.
+</Next>

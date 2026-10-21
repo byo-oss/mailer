@@ -7,6 +7,8 @@ order: 2
 
 `sesMailer` sends with SES v2 `SendEmail` through a client you already have, so the mailer uses the same credentials, region and middleware as the rest of your app.
 
+It is for apps that already own an `SESv2Client`. If you'd let `WrapsEmail` build the client, or your dev sink reads the SES v1 / `WrapsEmail` shape, use [`wrapsMailer`](/docs/mailer/wraps): `sesMailer` gains you nothing there.
+
 ```sh
 npm install @byo-oss/mailer @aws-sdk/client-sesv2
 ```
@@ -42,8 +44,18 @@ If what you have is an SES v1 `SESClient`, use [`wrapsMailer`](/docs/mailer/wrap
 
 Headers SES owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
 
+<Next>
+So are malformed headers, and a non-ASCII display name in `from` is sent RFC 2047 encoded. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
+</Next>
+
 ## Result
 
 `sesMailer` returns `{ id, messageId }`. `id` is the SES message id. `messageId` is `<id@email.amazonses.com>` when the client's region is us-east-1, the one region checked with real sends (see [Wraps](/docs/mailer/wraps#result) for why).
 
 `messageId` is left out in other regions, with a custom `endpoint`, and for a client without a readable `config.region` (most dev sinks). If SES returns no `MessageId`, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again.
+
+<Next>
+It is also left out when `AWS_ENDPOINT_URL` or `AWS_ENDPOINT_URL_SESV2` is set: the AWS SDK sends there, and the client's config doesn't show it. An endpoint set only in an AWS profile isn't read.
+</Next>
+
+Confirmed with a real SES v2 simple send through `sesMailer` in us-east-1: the delivered `Message-ID` was the `messageId` it returned, and `In-Reply-To` and `References` arrived unchanged.

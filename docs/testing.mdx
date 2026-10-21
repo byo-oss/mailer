@@ -41,4 +41,8 @@ testMailer(() => postmarkMailer({ token: "test", fetch: okFetch }), {
 
 `failing` is required, so the retry check always runs. `@byo-oss/mailer/testing` is ESM only.
 
+<Next>
+The suite also sends malformed headers (a bad name, a value with CR, LF or another control character) and expects a `PermanentMailError` for each, so check `headers` before calling the provider. The rules are in [Delivery semantics](/docs/mailer/delivery#replyto-and-headers). `memoryMailer` checks them too.
+</Next>
+
 Community adapters are separate packages named `byo-mailer-<provider>` (or the same under your own scope), and depend on this package's types and nothing else of ours. Follow [Delivery semantics](/docs/mailer/delivery): throw to retry, throw `PermanentMailError` to fail, never change the message, and never copy `replyTo` into `headers`.
