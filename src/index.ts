@@ -21,13 +21,15 @@ export type MailResult = {
   /**
    * The provider's id for the send when it reports one (for SES, the SES
    * message id); otherwise an id the adapter makes up (`emailSdkMailer`:
-   * `"<adapter>:<uuid>"`).
+   * `"<adapter>:<uuid>"`, `sesMailer`: `"ses:<uuid>"`).
    */
   id: string;
   /**
-   * The RFC 5322 `Message-ID` actually sent, when the provider reports it.
-   * Many providers replace the header you set, so this can differ from
-   * anything the caller generated, and most adapters can't report it at all.
+   * The RFC 5322 `Message-ID` actually sent, with angle brackets
+   * (`<abc@example.com>`), when the adapter knows it. Many providers replace
+   * the header you set (SES always does), so this can differ from anything the
+   * caller generated. `wrapsMailer` and `sesMailer` report it for sends
+   * through SES in us-east-1; most other adapters can't report it at all.
    * Don't rely on it being present.
    */
   messageId?: string;
@@ -98,7 +100,7 @@ export type MemoryMailerOptions = {
   fail?: "retry" | "permanent";
   /**
    * Also return a `messageId` (`<mem-1@memory.invalid>`), as a provider that
-   * reports the sent `Message-ID` would. Off by default, like the Wraps adapter.
+   * reports the sent `Message-ID` would. Off by default, as most adapters leave it out.
    */
   reportMessageId?: boolean;
 };

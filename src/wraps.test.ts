@@ -1,11 +1,32 @@
 import type { WrapsEmail } from "@wraps.dev/email";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isPermanentMailError } from "./index";
 import { mailMessage, testMailer } from "./testing";
-import { type WrapsMailerClient, wrapsMailer } from "./wraps";
+import {
+  type WrapsMailerClient,
+  type WrapsMailerOptions,
+  wrapsMailer,
+} from "./wraps";
 
 // the real client must stay assignable to the injectable one (types only)
 null as unknown as WrapsEmail satisfies WrapsMailerClient;
+
+// Stands in for the SDK when wrapsMailer builds its own client (no `client`
+// option): records the config it was built with and answers like SES.
+const built = vi.hoisted(() => ({
+  configs: [] as Record<string, unknown>[],
+  send: async (_params: unknown) => ({ messageId: "ses-1", requestId: "r" }),
+}));
+vi.mock("@wraps.dev/email", () => ({
+  WrapsEmail: class {
+    constructor(config: Record<string, unknown>) {
+      built.configs.push(config);
+    }
+    send(params: unknown) {
+      return built.send(params);
+    }
+  },
+}));
 
 const ok = { messageId: "ses-1", requestId: "req-1" };
 
@@ -37,6 +58,12 @@ testMailer(
       failingWith(sdkError("ValidationError", { field: "to" })),
   },
 );
+
+// the same contract on the path that builds its own client, which is the one
+// that returns a messageId (in us-east-1)
+testMailer(() => wrapsMailer({ from: "help@acme.test", region: "us-east-1" }), {
+  failing: () => failingWith(new Error("socket hang up")),
+});
 
 describe("wrapsMailer", () => {
   it("sends the message with the configured from", async () => {
@@ -124,14 +151,77 @@ describe("wrapsMailer", () => {
     ).rejects.toThrow(/replyTo/);
   });
 
-  it("returns the SES id as id and no messageId", async () => {
-    const mailer = wrapsMailer({
-      from: "help@acme.test",
-      client: { send: async () => ok },
+  describe("the result", () => {
+    // a CI or dev machine with AWS_REGION set must not change these results
+    beforeEach(() => {
+      vi.stubEnv("AWS_REGION", undefined);
+      vi.stubEnv("AWS_DEFAULT_REGION", undefined);
+      built.configs.length = 0;
     });
-    const result = await mailer.send(mailMessage());
-    expect(result).toEqual({ id: "ses-1" });
-    expect(result).not.toHaveProperty("messageId");
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const sendWith = async (options: Omit<WrapsMailerOptions, "from">) =>
+      wrapsMailer({ from: "help@acme.test", ...options }).send(mailMessage());
+
+    it("in us-east-1, has the SES id and the Message-ID SES wrote", async () => {
+      const result = await sendWith({ region: "us-east-1" });
+      expect(result).toEqual({
+        id: "ses-1",
+        messageId: "<ses-1@email.amazonses.com>",
+      });
+      expect(built.configs).toEqual([{ region: "us-east-1" }]);
+    });
+
+    // AWS doesn't document the Message-ID host for any region, and only
+    // us-east-1 has been read back from real sends
+    it.each(["eu-west-1", "us-west-2", "ap-southeast-2"])(
+      "in %s, has no messageId",
+      async (region) => {
+        expect(await sendWith({ region })).toEqual({ id: "ses-1" });
+      },
+    );
+
+    it("takes the region from AWS_REGION, then AWS_DEFAULT_REGION", async () => {
+      vi.stubEnv("AWS_DEFAULT_REGION", "us-east-1");
+      expect((await sendWith({})).messageId).toBe(
+        "<ses-1@email.amazonses.com>",
+      );
+      vi.stubEnv("AWS_REGION", "eu-west-1");
+      expect(await sendWith({})).toEqual({ id: "ses-1" });
+    });
+
+    it("prefers the region option over the environment", async () => {
+      vi.stubEnv("AWS_REGION", "eu-west-1");
+      expect((await sendWith({ region: "us-east-1" })).messageId).toBe(
+        "<ses-1@email.amazonses.com>",
+      );
+    });
+
+    it("has no messageId when the region is unknown", async () => {
+      expect(await sendWith({})).toEqual({ id: "ses-1" });
+    });
+
+    it("has no messageId with a custom endpoint", async () => {
+      expect(
+        await sendWith({
+          region: "us-east-1",
+          endpoint: "http://localhost:4566",
+        }),
+      ).toEqual({ id: "ses-1" });
+    });
+
+    it("has no messageId with an injected client, whatever the region", async () => {
+      vi.stubEnv("AWS_REGION", "us-east-1");
+      expect(
+        await sendWith({
+          region: "us-east-1",
+          client: { send: async () => ok },
+        }),
+      ).toEqual({ id: "ses-1" });
+      expect(built.configs).toEqual([]);
+    });
   });
 
   it("doesn't change the message or the headers object it was given", async () => {

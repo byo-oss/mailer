@@ -6,6 +6,7 @@ import {
   type MailResult,
   PermanentMailError,
 } from "./index";
+import { sesMessageId } from "./ses-message-id";
 
 /** The part of `WrapsEmail` this adapter uses, so tests can pass a fake. */
 export type WrapsMailerClient = {
@@ -26,7 +27,9 @@ export type WrapsMailerOptions = Omit<Partial<WrapsEmailConfig>, "client"> & {
   /**
    * A configured `new WrapsEmail({ ... })`. Without it, one is created on the
    * first send from the other options here (region, credentials, ...), which
-   * resolve AWS credentials from the environment when not given.
+   * resolve AWS credentials from the environment when not given. With it, the
+   * other options are ignored and results have no `messageId`: the client's
+   * region can't be read.
    */
   client?: WrapsMailerClient;
 };
@@ -70,9 +73,13 @@ function isPermanentSendError(error: unknown): boolean {
  *   {@link PermanentMailError}. Everything else (throttling, network errors,
  *   missing credentials, an unverified sender) is rethrown, so the send is
  *   retried.
- * - The result is `{ id }`, where `id` is SES's message id. `messageId` is
- *   left out: SES's id is not the RFC 5322 `Message-ID` header, and the format
- *   of the header SES writes hasn't been confirmed with a real round trip.
+ * - The result is `{ id, messageId }`. `id` is SES's message id. SES
+ *   replaces any `Message-ID` you set with its own, `<id@email.amazonses.com>`
+ *   in us-east-1, and that is `messageId`. It is left out when the region
+ *   isn't us-east-1 (AWS doesn't document the header's host, and only
+ *   us-east-1 has been checked with real sends), when the region isn't known
+ *   (it comes from `region`, else `AWS_REGION` or `AWS_DEFAULT_REGION`; not
+ *   from an AWS profile), when `endpoint` is set, and when you pass `client`.
  */
 export function wrapsMailer(options: WrapsMailerOptions): Mailer {
   const { from, client: injected, ...config } = options;
@@ -81,11 +88,25 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
   let client: Promise<WrapsMailerClient> | undefined = injected
     ? Promise.resolve(injected)
     : undefined;
+  // The region the client sends through, for `messageId`. Only known for a
+  // client built here, resolved as WrapsEmail does (the option, then the
+  // environment) when the client is built, minus its AWS profile lookup, which
+  // needs the AWS SDK. Unknown means no `messageId`, never a guess.
+  let region: string | undefined;
   const getClient = () => {
     // imported on first send, so the peer dependency is only needed by apps
     // that use this adapter
     client ??= import("@wraps.dev/email").then(
-      ({ WrapsEmail }) => new WrapsEmail(config),
+      ({ WrapsEmail }) => {
+        const env = globalThis.process?.env ?? {};
+        region = config.endpoint
+          ? undefined
+          : config.region ||
+            env.AWS_REGION ||
+            env.AWS_DEFAULT_REGION ||
+            undefined;
+        return new WrapsEmail(config);
+      },
       (error) => {
         client = undefined;
         throw new Error(
@@ -124,7 +145,10 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
       if (typeof result?.messageId !== "string" || !result.messageId) {
         throw new Error("wrapsMailer: the client returned no messageId");
       }
-      return { id: result.messageId };
+      const messageId = sesMessageId(result.messageId, region);
+      return messageId
+        ? { id: result.messageId, messageId }
+        : { id: result.messageId };
     },
   };
 }

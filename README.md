@@ -1,6 +1,6 @@
 # @byo-oss/mailer
 
-A tiny email-sender interface for [better-auth](https://better-auth.com) plugins, with a [Wraps](https://wraps.dev) adapter, an [email-sdk](https://email-sdk.dev) adapter, an in-memory mailer and a contract test suite.
+A tiny email-sender interface for [better-auth](https://better-auth.com) plugins, with a [Wraps](https://wraps.dev) adapter, an AWS SES client adapter, an [email-sdk](https://email-sdk.dev) adapter, an in-memory mailer and a contract test suite.
 
 > Community plugin — not affiliated with the better-auth team.
 
@@ -16,6 +16,12 @@ To send through your own AWS SES account with the Wraps adapter, add the SDK too
 
 ```
 npm install @wraps.dev/email
+```
+
+To send through an SES v2 client you already have (`SESv2Client`), add the AWS SDK instead (an optional peer dependency, `^3.527.0`, the first version whose `SendEmail` types include custom `Headers`):
+
+```
+npm install @aws-sdk/client-sesv2
 ```
 
 To send through one of the providers behind [email-sdk](https://email-sdk.dev), add its client instead (also an optional peer dependency, `^3`):
@@ -36,6 +42,21 @@ export const mailer = wrapsMailer({ from: "Acme Support <help@acme.com>" });
 ```
 
 The sender address (or its domain) must be verified in your SES account. AWS credentials come from the environment, or pass `region`, `credentials` or a ready-made `client` (see Options).
+
+**Or with your own SES client.** If your app already has an `SESv2Client` (or a dev sink with its shape), pass it in:
+
+```ts
+// lib/mailer.ts
+import { SESv2Client } from "@aws-sdk/client-sesv2";
+import { sesMailer } from "@byo-oss/mailer/ses";
+
+export const mailer = sesMailer({
+  from: "Acme Support <help@acme.com>",
+  client: new SESv2Client({ region: "us-east-1" }),
+});
+```
+
+It sends with SES v2 `SendEmail`. If what you have is an SES v1 `SESClient`, wrap it for the Wraps adapter instead: `wrapsMailer({ from, client: new WrapsEmail({ client: sesClient }) })`.
 
 **Or with email-sdk.** You build the client and pass it in:
 
@@ -94,8 +115,15 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 | Option | Default | |
 |---|---|---|
 | `from` | required | Sender address, verified in SES: `"Acme <help@acme.com>"`. |
-| `client` | a `WrapsEmail` built from the options below | A configured `new WrapsEmail({ ... })`, or any `{ send }` with the same shape (a fake, in tests). When set, the options below are ignored. |
+| `client` | a `WrapsEmail` built from the options below | A configured `new WrapsEmail({ ... })`, or any `{ send }` with the same shape (a fake, in tests). When set, the options below are ignored and results have no `messageId`. |
 | `region`, `credentials`, `roleArn`, ... | from the environment | Any other `@wraps.dev/email` config (`WrapsEmailConfig`), used to build the default client on the first send. |
+
+`sesMailer(options)` from `@byo-oss/mailer/ses`:
+
+| Option | Default | |
+|---|---|---|
+| `from` | required | Sender address, verified in SES: `"Acme <help@acme.com>"`. |
+| `client` | required | Your `new SESv2Client({ ... })` from `@aws-sdk/client-sesv2`, or any `{ send(command), config? }` with the same shape (a dev sink, a fake in tests). Its region (`config.region`) is read after each send, for `messageId`. |
 
 `emailSdkMailer(options)` from `@byo-oss/mailer/email-sdk`:
 
@@ -117,16 +145,17 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 |---|---|---|
 | `Mailer` | `@byo-oss/mailer` | Type: `{ send(message: MailMessage): Promise<MailResult> }`. |
 | `MailMessage` | `@byo-oss/mailer` | Type: `{ to: string \| string[]; subject; html; text; replyTo?; headers? }`. |
-| `MailResult` | `@byo-oss/mailer` | Type: `{ id: string; messageId?: string }`. `id` is the provider's id for the send when the provider reports one; `emailSdkMailer` makes up `"<adapter>:<uuid>"` when it doesn't. `messageId` is the RFC 5322 `Message-ID` actually sent, only when the provider reports it. |
+| `MailResult` | `@byo-oss/mailer` | Type: `{ id: string; messageId?: string }`. `id` is the provider's id for the send when the provider reports one; `emailSdkMailer` makes up `"<adapter>:<uuid>"` (and `sesMailer` `"ses:<uuid>"`) when it doesn't. `messageId` is the RFC 5322 `Message-ID` actually sent, with angle brackets, only when the adapter knows it (`wrapsMailer` and `sesMailer` in us-east-1; see Delivery semantics). |
 | `PermanentMailError` | `@byo-oss/mailer` | Class. Throw it from `send` for a send that can never succeed. |
 | `isPermanentMailError(error)` | `@byo-oss/mailer` | Guard for it that also works when two copies of this package are installed. |
 | `memoryMailer(options?)` | `@byo-oss/mailer` | A `Mailer` that records messages in `.sent` (copies), for tests and local development. Also `.clear()` and `.fail`. |
 | `wrapsMailer(options)` | `@byo-oss/mailer/wraps` | A `Mailer` that sends through AWS SES with `@wraps.dev/email`. |
+| `sesMailer(options)` | `@byo-oss/mailer/ses` | A `Mailer` that sends through your `SESv2Client` with `SendEmail`. |
 | `emailSdkMailer(options)` | `@byo-oss/mailer/email-sdk` | A `Mailer` that sends through an `@opencoredev/email-sdk` client. |
 | `SUPPORTED_ADAPTERS` | `@byo-oss/mailer/email-sdk` | `readonly string[]`: the email-sdk adapter names `emailSdkMailer` accepts. |
 | `testMailer(factory, { failing, permanentlyFailing? })` | `@byo-oss/mailer/testing` | The contract test suite, for vitest. ESM only. |
 
-`replyTo` is its own field. Adapters map it to the provider's reply-to option and never copy it into `headers`. `headers` is for extras such as `In-Reply-To`, `References` or `List-Unsubscribe`; `wrapsMailer` and `emailSdkMailer` reject the headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) with a `PermanentMailError`.
+`replyTo` is its own field. Adapters map it to the provider's reply-to option and never copy it into `headers`. `headers` is for extras such as `In-Reply-To`, `References` or `List-Unsubscribe`; `wrapsMailer`, `sesMailer` and `emailSdkMailer` reject the headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) with a `PermanentMailError`.
 
 ## Delivery semantics
 
@@ -137,7 +166,16 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 
 `wrapsMailer` maps the SDK's errors like this: a validation error (malformed address, bad header) and SES `MessageRejected` or `InvalidParameterValue` become a `PermanentMailError`; everything else, including throttling, network errors, missing credentials and a sender that isn't verified yet, is rethrown, so it retries once you fix the account.
 
-`wrapsMailer` returns `{ id }` where `id` is the SES message id, and leaves `messageId` out. SES's id is not the RFC 5322 `Message-ID` header, and SES may replace the header you set, so the adapter doesn't claim to know it.
+`wrapsMailer` returns `{ id, messageId }`. `id` is the SES message id. SES replaces any `Message-ID` header with its own ([AWS](https://docs.aws.amazon.com/ses/latest/dg/header-fields.html): "If you provide a Message-ID header, Amazon SES overrides the header with its own value"), which in us-east-1 is `<id@email.amazonses.com>`, and that is `messageId`. AWS doesn't document the header's host, so it comes from real sends, and only us-east-1 has been checked. `messageId` is left out:
+
+- in any other region;
+- when the region isn't known: it comes from the `region` option, else `AWS_REGION` or `AWS_DEFAULT_REGION`. A region set only in an AWS profile (the shared AWS config file) isn't read, so set one of those;
+- when `endpoint` is set (LocalStack, a proxy);
+- when you pass `client`: its region can't be read.
+
+`sesMailer` maps `SendEmail` errors like this: `BadRequestException` and `MessageRejected` become a `PermanentMailError`, except a `MessageRejected` for an address or domain that isn't verified (or a sandboxed account). That one, and everything else (throttling, `LimitExceededException`, `SendingPausedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `NotFoundException`, network errors, missing credentials), is rethrown, so it retries once you fix the account.
+
+`sesMailer` returns `{ id, messageId }` the same way: `id` is the SES message id, and `messageId` is `<id@email.amazonses.com>` when the client's region is us-east-1. It is left out in other regions, with a custom `endpoint`, and for a client without a readable `config.region` (most dev sinks). If the client returns no `MessageId`, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again.
 
 `emailSdkMailer` maps errors like this. email-sdk wraps adapter failures in a route error, so the mapping looks at every failure inside it, not only the outer error.
 
@@ -152,7 +190,7 @@ Any failure inside a route error that isn't a permanent 400 or 422 makes the who
 
 A 400 or 422 is permanent even when the provider uses it for an account problem (SES: sending paused, MAIL FROM domain not verified; Postmark: account pending approval). The adapters don't say which it was, so unlike `wrapsMailer`, those sends are not retried after you fix the account.
 
-`emailSdkMailer` returns `{ id }` where `id` is the adapter's id for the send. Some adapters don't report one; then it returns `"<adapter>:<uuid>"` rather than throwing, because a throw would retry the send and could deliver it twice. It leaves `messageId` out, like `wrapsMailer`.
+`emailSdkMailer` returns `{ id }` where `id` is the adapter's id for the send. Some adapters don't report one; then it returns `"<adapter>:<uuid>"` rather than throwing, because a throw would retry the send and could deliver it twice. It leaves `messageId` out: most adapters don't report the `Message-ID` they sent (email-sdk's `ses` adapter doesn't either, so use `wrapsMailer` or `sesMailer` when you need it).
 
 ## Supported email-sdk adapters
 
@@ -196,7 +234,7 @@ testMailer(() => postmarkMailer({ token: "test", fetch: okFetch }), {
 - No cc, bcc, attachments, tags or batch sending. Add them to a message type in a minor release when a package needs them.
 - No queue, retries or backoff. The package that calls `send` owns those; this only says which errors to retry.
 - No inbound mail. That belongs to the package that receives it.
-- Wraps (AWS SES) and email-sdk are the first-party adapters. Other providers come through email-sdk, within the supported list above. Community adapters are still welcome.
+- Wraps (AWS SES), your own SES client, and email-sdk are the first-party adapters. Other providers come through email-sdk, within the supported list above. Community adapters are still welcome.
 
 ## License
 
