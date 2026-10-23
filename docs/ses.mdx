@@ -42,11 +42,7 @@ If what you have is an SES v1 `SESClient`, use [`wrapsMailer`](/docs/mailer/wrap
 | `MessageRejected` for an address or domain that isn't verified, or a sandboxed account. | Rethrown, so it retries once you fix the account |
 | Anything else: throttling, `LimitExceededException`, `SendingPausedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `NotFoundException`, network errors, missing credentials. | Rethrown, so it retries |
 
-Headers SES owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
-
-<Next>
-So are malformed headers, and a non-ASCII display name in `from` is sent RFC 2047 encoded. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
-</Next>
+Headers SES owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`, and so are malformed headers. Use `replyTo` for the reply-to address. A non-ASCII display name in `from` is sent RFC 2047 encoded. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
 
 ## Result
 
@@ -54,8 +50,10 @@ So are malformed headers, and a non-ASCII display name in `from` is sent RFC 204
 
 `messageId` is left out in other regions, with a custom `endpoint`, and for a client without a readable `config.region` (most dev sinks). If SES returns no `MessageId`, `id` is `"ses:<uuid>"` rather than a throw, which would send the message again.
 
-<Next>
 It is also left out when `AWS_ENDPOINT_URL` or `AWS_ENDPOINT_URL_SESV2` is set: the AWS SDK sends there, and the client's config doesn't show it. An endpoint set only in an AWS profile isn't read.
+
+<Next>
+Setting `AWS_IGNORE_CONFIGURED_ENDPOINT_URLS` to exactly `true` makes the AWS SDK ignore `AWS_ENDPOINT_URL` and `AWS_ENDPOINT_URL_SESV2`, so those variables no longer leave `messageId` out. The AWS SDK for JavaScript reads this variable only from `@smithy/core` 3.29.6 (July 2026) on. An older SDK still sends to the endpoint variables, and the mailer would then return a `messageId` SES never wrote, so update the SDK before you set it. Any other value, such as `1` or `TRUE`, doesn't count, and is ignored without an error. A custom `endpoint` on the client still leaves it out, and so does the client's own `ignoreConfiguredEndpointUrls` option, which isn't read. A profile's `ignore_configured_endpoint_urls` isn't read, so an endpoint variable still leaves it out in that case.
 </Next>
 
 Confirmed with a real SES v2 simple send through `sesMailer` in us-east-1: the delivered `Message-ID` was the `messageId` it returned, and `In-Reply-To` and `References` arrived unchanged.

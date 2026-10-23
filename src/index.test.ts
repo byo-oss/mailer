@@ -32,16 +32,22 @@ describe("isPermanentMailError", () => {
   });
 
   it("accepts a copy made by another instance of the package", () => {
+    // the brand is the symbol on an instance, so a second copy's is the same one
+    const brand = Object.getOwnPropertySymbols(new PermanentMailError("x")).at(
+      0,
+    ) as symbol;
+    // registered, so a second copy of the package gets the very same symbol
+    expect(Symbol.keyFor(brand)).toBe("@byo-oss/mailer/permanent");
     // what a second installed copy produces: same brand, different class
     class Other extends Error {
       constructor() {
         super("other");
-        Object.defineProperty(this, Symbol.for("@byo-oss/mailer/permanent"), {
-          value: true,
-        });
+        Object.defineProperty(this, brand, { value: true });
       }
     }
     expect(isPermanentMailError(new Other())).toBe(true);
+    expect(isPermanentMailError({ [brand]: true })).toBe(true);
+    expect(isPermanentMailError({ [brand]: false })).toBe(false);
   });
 
   it("rejects ordinary errors and non-errors", () => {
@@ -143,5 +149,53 @@ describe("memoryMailer", () => {
       .catch((e: unknown) => e);
     expect(isPermanentMailError(error)).toBe(true);
     expect(mailer.sent).toEqual([]);
+  });
+
+  it.each([
+    ["From", "a@x.test"],
+    ["to", "b@x.test"],
+    ["subject", "Hi"],
+    ["Message-ID", "<m@x.test>"],
+    ["Reply-To", "reply@x.test"],
+    ["CONTENT-TYPE", "text/html"],
+    ["Bcc", "c@x.test"],
+  ])(
+    "rejects the reserved header %s as permanent and records nothing",
+    async (name, value) => {
+      const mailer = memoryMailer();
+      const error = await mailer
+        .send({ ...message(), headers: { [name]: value } })
+        .catch((e: unknown) => e);
+      expect(isPermanentMailError(error)).toBe(true);
+      expect(mailer.sent).toEqual([]);
+    },
+  );
+
+  it("points a reserved Reply-To at replyTo", async () => {
+    const error = await memoryMailer()
+      .send({ ...message(), headers: { "reply-to": "x@y.test" } })
+      .catch((e: unknown) => e);
+    expect((error as Error).message).toContain("use `replyTo`");
+  });
+
+  it("checks reserved headers before fail: retry", async () => {
+    const mailer = memoryMailer({ fail: "retry" });
+    const error = await mailer
+      .send({ ...message(), headers: { Subject: "x" } })
+      .catch((e: unknown) => e);
+    expect(isPermanentMailError(error)).toBe(true);
+    expect(mailer.sent).toEqual([]);
+  });
+
+  it("records allowed headers such as In-Reply-To and References", async () => {
+    const mailer = memoryMailer();
+    const headers = {
+      "In-Reply-To": "<a@x.test>",
+      References: "<b@x.test> <a@x.test>",
+    };
+    await expect(mailer.send({ ...message(), headers })).resolves.toEqual({
+      id: "mem-1",
+    });
+    expect(mailer.sent[0]?.headers).toEqual(headers);
   });
 });

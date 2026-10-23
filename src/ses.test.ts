@@ -209,6 +209,7 @@ describe("sesMailer", () => {
     beforeEach(() => {
       vi.stubEnv("AWS_ENDPOINT_URL", undefined);
       vi.stubEnv("AWS_ENDPOINT_URL_SESV2", undefined);
+      vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", undefined);
     });
     afterEach(() => {
       vi.unstubAllEnvs();
@@ -284,6 +285,81 @@ describe("sesMailer", () => {
         expect(result).toEqual({ id: SES_ID });
       },
     );
+
+    // AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: the AWS SDK skips the endpoint
+    // variables only when it is exactly "true"
+    describe("with AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", () => {
+      const LOCALSTACK = "http://localhost:4566";
+      const sendUs = async (client = fakeClient().client) =>
+        sesMailer({ from: "help@acme.test", client }).send(mailMessage());
+
+      beforeEach(() => {
+        vi.stubEnv("AWS_ENDPOINT_URL_SES", undefined);
+        vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", undefined);
+      });
+
+      it("has the messageId with no endpoint variable", async () => {
+        vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+        expect((await sendUs()).messageId).toBe(
+          `<${SES_ID}@email.amazonses.com>`,
+        );
+      });
+
+      it.each(["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_SESV2"])(
+        "has the messageId with %s set and the flag true",
+        async (variable) => {
+          vi.stubEnv(variable, LOCALSTACK);
+          vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+          expect(await sendUs()).toEqual({
+            id: SES_ID,
+            messageId: `<${SES_ID}@email.amazonses.com>`,
+          });
+        },
+      );
+
+      it.each(["false", undefined])(
+        "has no messageId with AWS_ENDPOINT_URL set and the flag %s",
+        async (flag) => {
+          vi.stubEnv("AWS_ENDPOINT_URL", LOCALSTACK);
+          vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", flag);
+          expect(await sendUs()).toEqual({ id: SES_ID });
+        },
+      );
+
+      // only exactly "true" ignores the variables; these must not throw
+      it.each(["TRUE", "1"])(
+        "has no messageId with AWS_ENDPOINT_URL set and the flag %s, and doesn't throw",
+        async (flag) => {
+          vi.stubEnv("AWS_ENDPOINT_URL", LOCALSTACK);
+          vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", flag);
+          expect(await sendUs()).toEqual({ id: SES_ID });
+        },
+      );
+
+      it("has no messageId with a code-set endpoint, whatever the flag", async () => {
+        vi.stubEnv("AWS_ENDPOINT_URL", LOCALSTACK);
+        vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+        const { client } = fakeClient({
+          endpoint: async () => ({ hostname: "localhost" }),
+          isCustomEndpoint: true,
+        });
+        expect(await sendUs(client)).toEqual({ id: SES_ID });
+      });
+
+      it("has the messageId with a variable the mailer doesn't read", async () => {
+        vi.stubEnv("AWS_ENDPOINT_URL_SES", LOCALSTACK);
+        expect((await sendUs()).messageId).toBe(
+          `<${SES_ID}@email.amazonses.com>`,
+        );
+      });
+
+      it("has the messageId with an empty AWS_ENDPOINT_URL", async () => {
+        vi.stubEnv("AWS_ENDPOINT_URL", "");
+        expect((await sendUs()).messageId).toBe(
+          `<${SES_ID}@email.amazonses.com>`,
+        );
+      });
+    });
 
     it("makes up an id rather than throwing when SES returns none", async () => {
       const { client } = fakeClient({ reply: async () => ({}) });
@@ -368,6 +444,7 @@ describe("sesMailer with a real SESv2Client", () => {
   beforeEach(() => {
     vi.stubEnv("AWS_ENDPOINT_URL", undefined);
     vi.stubEnv("AWS_ENDPOINT_URL_SESV2", undefined);
+    vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", undefined);
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -447,6 +524,20 @@ describe("sesMailer with a real SESv2Client", () => {
     );
     expect(requests[0]?.hostname).toBe("localhost");
     expect(result).toEqual({ id: SES_ID });
+  });
+
+  it("sends to the real region, and returns the messageId, when the flag ignores AWS_ENDPOINT_URL_SESV2", async () => {
+    vi.stubEnv("AWS_ENDPOINT_URL_SESV2", "http://localhost:4566");
+    vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+    const { client, requests } = await realClient("us-east-1");
+    const result = await sesMailer({ from: "help@acme.test", client }).send(
+      mailMessage(),
+    );
+    expect(requests[0]?.hostname).toBe("email.us-east-1.amazonaws.com");
+    expect(result).toEqual({
+      id: SES_ID,
+      messageId: `<${SES_ID}@email.amazonses.com>`,
+    });
   });
 
   it("returns no messageId in another region", async () => {

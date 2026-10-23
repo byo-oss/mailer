@@ -1,4 +1,4 @@
-import { PermanentMailError } from "./index";
+import { PermanentMailError } from "./errors";
 
 // Set by the mailer or the provider. Most provider SDKs reject them in
 // `headers` too; checking here first keeps the error the same whatever client

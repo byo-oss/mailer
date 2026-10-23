@@ -1,4 +1,7 @@
-import { checkHeaders } from "./headers";
+import { PermanentMailError } from "./errors";
+import { copyHeaders } from "./headers";
+
+export { isPermanentMailError, PermanentMailError } from "./errors";
 
 /**
  * A message to send. The same shape for every provider.
@@ -59,40 +62,6 @@ export type Mailer = {
   send(message: MailMessage): Promise<MailResult>;
 };
 
-const PERMANENT = Symbol.for("@byo-oss/mailer/permanent");
-
-/**
- * Throw from `Mailer.send` for a send that will never succeed, such as an
- * invalid recipient address or a message the provider rejected as malformed.
- * The caller marks the delivery failed without retrying. Any other error
- * means retry.
- *
- * Check for it with {@link isPermanentMailError}, not `instanceof`, so it is
- * recognised when two copies of this package are installed.
- */
-export class PermanentMailError extends Error {
-  readonly permanent = true;
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "PermanentMailError";
-    Object.defineProperty(this, PERMANENT, { value: true });
-  }
-}
-
-/**
- * True for a {@link PermanentMailError}, including one created by another
- * copy of this package (matched by a shared `Symbol.for` brand, not by class).
- */
-export function isPermanentMailError(error: unknown): error is Error {
-  return (
-    error instanceof PermanentMailError ||
-    (typeof error === "object" &&
-      error !== null &&
-      (error as Record<symbol, unknown>)[PERMANENT] === true)
-  );
-}
-
 export type MemoryMailerOptions = {
   /**
    * Make every `send` throw: `"retry"` throws a plain `Error` (callers retry),
@@ -121,7 +90,9 @@ export type MemoryMailer = Mailer & {
  * local development. Like the adapters, it throws a
  * {@link PermanentMailError} for a malformed header (a name that isn't
  * printable ASCII without `:`, a value with a line break, another control
- * character or non-ASCII text).
+ * character or non-ASCII text) and for a reserved header (`From`, `To`,
+ * `Subject`, `Reply-To`, `Message-ID`, ..., matched case-insensitively; send a
+ * reply address as `replyTo`). A rejected send records nothing.
  *
  * ```ts
  * const mailer = memoryMailer();
@@ -143,7 +114,7 @@ export function memoryMailer(options: MemoryMailerOptions = {}): MemoryMailer {
     },
     async send(message) {
       // first, as an adapter checks before it calls the provider
-      checkHeaders(message.headers);
+      copyHeaders(message.headers);
       if (this.fail === "permanent") {
         throw new PermanentMailError("memoryMailer: permanent failure");
       }
