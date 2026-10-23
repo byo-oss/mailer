@@ -71,7 +71,7 @@
   "peerDependencies": {
     "@aws-sdk/client-sesv2": "^3.527.0",
     "@opencoredev/email-sdk": "^3.0.0",
-    "@wraps.dev/email": ">=0.15.0",
+    "@wraps.dev/email": ">=0.15.1",
     "vitest": ">=3"
   },
   "peerDependenciesMeta": {
@@ -93,7 +93,7 @@
     "@biomejs/biome": "^2.5.15",
     "@opencoredev/email-sdk": "^3.0.0",
     "@types/node": "^22",
-    "@wraps.dev/email": "^0.15.0",
+    "@wraps.dev/email": "^0.15.1",
     "tsup": "^8.5.1",
     "typescript": "^5.9",
     "vitest": "^4.1.10"

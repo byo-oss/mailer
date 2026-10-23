@@ -11,6 +11,10 @@ order: 1
 npm install @byo-oss/mailer @wraps.dev/email
 ```
 
+<Next>
+Use `@wraps.dev/email` 0.15.1 or later (0.2.0 of the mailer requires it). Before 0.15.1, a message with `headers` (such as the `In-Reply-To` and `References` of a threaded reply) was sent with a non-ASCII `subject` as raw 8-bit text instead of an RFC 2047 encoded-word. The SDK builds a raw message whenever `headers` are set.
+</Next>
+
 ```ts title="lib/mailer.ts"
 import { wrapsMailer } from "@byo-oss/mailer/wraps";
 

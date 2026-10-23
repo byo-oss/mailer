@@ -4,7 +4,7 @@ A `Mailer` is `{ send(message): Promise<{ id: string; messageId?: string }> }`. 
 
 ## Using a mailer
 
-- Server: `import { wrapsMailer } from "@byo-oss/mailer/wraps"` and `wrapsMailer({ from: "Name <addr@verified-domain>" })`. Needs `npm install @wraps.dev/email` and a sender verified in SES. Pass the result to the package that wants a `mailer`.
+- Server: `import { wrapsMailer } from "@byo-oss/mailer/wraps"` and `wrapsMailer({ from: "Name <addr@verified-domain>" })`. Needs `npm install @wraps.dev/email` (0.15.1 or later) and a sender verified in SES. Pass the result to the package that wants a `mailer`.
 - Server, existing SES v2 client: `sesMailer({ from, client })` from `@byo-oss/mailer/ses`, with `client: new SESv2Client(...)` from `@aws-sdk/client-sesv2` (`^3.527.0`) or a dev sink of that shape. For a v1 `SESClient`, use `wrapsMailer({ from, client: new WrapsEmail({ client: sesClient }) })`.
 - Server, other providers: `emailSdkMailer({ from, client })` from `@byo-oss/mailer/email-sdk`, with `client: createEmailClient({ adapters: [...], telemetry: false })` from `@opencoredev/email-sdk`. Supported adapters only (`SUPPORTED_ADAPTERS`); it throws a `TypeError` for the rest. Pass `telemetry: false`.
 - Tests: `memoryMailer()` from `@byo-oss/mailer`. Read what was sent from `.sent`; set `.fail = "retry" | "permanent"` to simulate failures.

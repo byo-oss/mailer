@@ -18,6 +18,8 @@ To send through your own AWS SES account with the Wraps adapter, add the SDK too
 npm install @wraps.dev/email
 ```
 
+Use `@wraps.dev/email` 0.15.1 or later: before it, a message with `headers` (a threaded reply) was sent with a non-ASCII `subject` as raw 8-bit text instead of an RFC 2047 encoded-word.
+
 To send through an SES v2 client you already have (`SESv2Client`), add the AWS SDK instead (an optional peer dependency, `^3.527.0`, the first version whose `SendEmail` types include custom `Headers`):
 
 ```
