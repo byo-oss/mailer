@@ -6,7 +6,7 @@ import {
   type MailResult,
   PermanentMailError,
 } from "./index";
-import { madeUpSesId, sesMessageId } from "./ses-message-id";
+import { envEndpointSet, madeUpSesId, sesMessageId } from "./ses-message-id";
 
 /** The part of `WrapsEmail` this adapter uses, so tests can pass a fake. */
 export type WrapsMailerClient = {
@@ -84,9 +84,17 @@ function isPermanentSendError(error: unknown): boolean {
  *   isn't us-east-1 (AWS doesn't document the header's host, and only
  *   us-east-1 has been checked with real sends), when the region isn't known
  *   (it comes from `region`, else `AWS_REGION` or `AWS_DEFAULT_REGION`; not
- *   from an AWS profile), when `endpoint`, `AWS_ENDPOINT_URL`,
- *   `AWS_ENDPOINT_URL_SES` or `AWS_ENDPOINT_URL_SESV2` is set, and when you
- *   pass `client`. If the client
+ *   from an AWS profile), when `endpoint` is set, when `AWS_ENDPOINT_URL`,
+ *   `AWS_ENDPOINT_URL_SES` or `AWS_ENDPOINT_URL_SESV2` is set (the AWS SDK
+ *   sends there), and when you pass `client`. Setting
+ *   `AWS_IGNORE_CONFIGURED_ENDPOINT_URLS` to `"true"` makes the SDK ignore
+ *   those three variables, so `messageId` is kept then (only from
+ *   `@smithy/core` 3.29.6, July 2026; an older SDK still sends there and a
+ *   `messageId` would be wrong, so update it first); a code-set `endpoint`
+ *   still omits it. The AWS profile is not read: a profile
+ *   `ignore_configured_endpoint_urls` is not honoured (so `messageId` is left
+ *   out whenever one of the variables is set), and a profile `endpoint_url`
+ *   doesn't stop `messageId`. If the client
  *   returns no id, `id` is `"ses:<random uuid>"` rather than an error, which
  *   would send the message again.
  */
@@ -103,8 +111,8 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
   // environment) when the client is built, minus its AWS profile lookup, which
   // needs the AWS SDK. Unknown means no `messageId`, never a guess. So does a
   // custom endpoint, from the option or from the environment variables the
-  // AWS SDK reads: SES v1 today, plus SES v2 for a WrapsEmail that sends
-  // with an SESv2Client.
+  // AWS SDK reads (unless AWS_IGNORE_CONFIGURED_ENDPOINT_URLS is "true"): SES
+  // v1 today, plus SES v2 for a WrapsEmail that sends with an SESv2Client.
   let region: string | undefined;
   const getClient = () => {
     // imported on first send, so the peer dependency is only needed by apps
@@ -114,9 +122,11 @@ export function wrapsMailer(options: WrapsMailerOptions): Mailer {
         const env = globalThis.process?.env ?? {};
         region =
           config.endpoint ||
-          env.AWS_ENDPOINT_URL ||
-          env.AWS_ENDPOINT_URL_SES ||
-          env.AWS_ENDPOINT_URL_SESV2
+          envEndpointSet(env, [
+            "AWS_ENDPOINT_URL",
+            "AWS_ENDPOINT_URL_SES",
+            "AWS_ENDPOINT_URL_SESV2",
+          ])
             ? undefined
             : config.region ||
               env.AWS_REGION ||

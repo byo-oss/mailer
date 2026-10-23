@@ -179,8 +179,8 @@ importers:
         specifier: ^22
         version: 22.20.5
       '@wraps.dev/email':
-        specifier: ^0.15.0
-        version: 0.15.0
+        specifier: ^0.15.1
+        version: 0.15.1
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.31)(typescript@5.9.3)
@@ -877,8 +877,8 @@ packages:
   '@vitest/utils@4.1.12':
     resolution: {integrity: sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==}
 
-  '@wraps.dev/email@0.15.0':
-    resolution: {integrity: sha512-2FepHBLV2SgSOi4FxiHg6xJYcR8KWc8+Kw9sAOn2aEzDcDPYUujNWhJOSBv+6PF1difbPwHSluKPfg5WlVKFIA==}
+  '@wraps.dev/email@0.15.1':
+    resolution: {integrity: sha512-tgf32lplCHtA8mUIUz7bdIxlUvxrqm6DoKQ7MMnJjZrcF4jlFVZykykt3gP1uw9vlg1lkBM1FAIQvUpNkbj2UA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@react-email/components': '>=0.0.25'
@@ -1975,7 +1975,7 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@wraps.dev/email@0.15.0':
+  '@wraps.dev/email@0.15.1':
     dependencies:
       '@aws-sdk/client-dynamodb': 3.1153.0
       '@aws-sdk/client-s3': 3.1153.0

@@ -70,11 +70,7 @@ Any failure inside a route error that isn't a permanent 400 or 422 makes the who
 A 400 or 422 is permanent even when the provider uses it for an account problem (SES: sending paused, MAIL FROM domain not verified; Postmark: account pending approval). The adapters don't say which it was, so unlike `wrapsMailer` and `sesMailer`, those sends are not retried after you fix the account.
 </Callout>
 
-Headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`. Use `replyTo` for the reply-to address.
-
-<Next>
-So are malformed headers. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
-</Next>
+Headers the provider owns (`From`, `To`, `Subject`, `Reply-To`, `Message-ID`, `Date`, ...) are rejected with a `PermanentMailError`, and so are malformed headers (see [Delivery semantics](/docs/mailer/delivery#replyto-and-headers)). Use `replyTo` for the reply-to address.
 
 ## Result
 

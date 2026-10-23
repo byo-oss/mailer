@@ -19,6 +19,10 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 
 `mailer.sent` holds copies of each message. `mailer.clear()` empties it.
 
+<Next>
+`memoryMailer` rejects the reserved headers, as the adapters do: `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, `Return-Path` and `Sender`, in any case. It throws a `PermanentMailError` and records nothing for that send. Before 0.2.0 it let them through; since 0.2.0 a test that passes one in `headers` fails: put the reply address in `replyTo` instead. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
+</Next>
+
 | Option | Default | |
 |---|---|---|
 | `fail` | none | `"retry"` makes every send throw a plain error; `"permanent"` throws a `PermanentMailError`. Also settable later as `mailer.fail`. |
@@ -41,8 +45,6 @@ testMailer(() => postmarkMailer({ token: "test", fetch: okFetch }), {
 
 `failing` is required, so the retry check always runs. `@byo-oss/mailer/testing` is ESM only.
 
-<Next>
 The suite also sends malformed headers (a bad name, a value with CR, LF or another control character) and expects a `PermanentMailError` for each, so check `headers` before calling the provider. The rules are in [Delivery semantics](/docs/mailer/delivery#replyto-and-headers). `memoryMailer` checks them too.
-</Next>
 
 Community adapters are separate packages named `byo-mailer-<provider>` (or the same under your own scope), and depend on this package's types and nothing else of ours. Follow [Delivery semantics](/docs/mailer/delivery): throw to retry, throw `PermanentMailError` to fail, never change the message, and never copy `replyTo` into `headers`.

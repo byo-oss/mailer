@@ -190,6 +190,7 @@ describe("wrapsMailer", () => {
       vi.stubEnv("AWS_ENDPOINT_URL", undefined);
       vi.stubEnv("AWS_ENDPOINT_URL_SES", undefined);
       vi.stubEnv("AWS_ENDPOINT_URL_SESV2", undefined);
+      vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", undefined);
       built.configs.length = 0;
     });
     afterEach(() => {
@@ -258,6 +259,76 @@ describe("wrapsMailer", () => {
       vi.stubEnv(variable, "http://localhost:4566");
       expect(await sendWith({ region: "us-east-1" })).toEqual({
         id: "ses-1",
+      });
+    });
+
+    // AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: the AWS SDK skips the endpoint
+    // variables only when it is exactly "true"; any other value is not
+    // "true", so the variables still count here (the SDK treats such a value
+    // as unset and falls through to the profile setting, then false)
+    describe("with AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", () => {
+      const ENDPOINT_VARIABLES = [
+        "AWS_ENDPOINT_URL",
+        "AWS_ENDPOINT_URL_SES",
+        "AWS_ENDPOINT_URL_SESV2",
+      ];
+      const LOCALSTACK = "http://localhost:4566";
+
+      it("has the messageId with no endpoint variable", async () => {
+        vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+        expect((await sendWith({ region: "us-east-1" })).messageId).toBe(
+          "<ses-1@email.amazonses.com>",
+        );
+      });
+
+      it.each(ENDPOINT_VARIABLES)(
+        "has the messageId with %s set and the flag true",
+        async (variable) => {
+          vi.stubEnv(variable, LOCALSTACK);
+          vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+          expect(await sendWith({ region: "us-east-1" })).toEqual({
+            id: "ses-1",
+            messageId: "<ses-1@email.amazonses.com>",
+          });
+        },
+      );
+
+      it.each(["false", undefined])(
+        "has no messageId with AWS_ENDPOINT_URL set and the flag %s",
+        async (flag) => {
+          vi.stubEnv("AWS_ENDPOINT_URL", LOCALSTACK);
+          vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", flag);
+          expect(await sendWith({ region: "us-east-1" })).toEqual({
+            id: "ses-1",
+          });
+        },
+      );
+
+      // only exactly "true" ignores the variables; these must not throw
+      it.each(["TRUE", "1"])(
+        "has no messageId with AWS_ENDPOINT_URL set and the flag %s, and doesn't throw",
+        async (flag) => {
+          vi.stubEnv("AWS_ENDPOINT_URL", LOCALSTACK);
+          vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", flag);
+          expect(await sendWith({ region: "us-east-1" })).toEqual({
+            id: "ses-1",
+          });
+        },
+      );
+
+      it("has no messageId with a code-set endpoint, whatever the flag", async () => {
+        vi.stubEnv("AWS_ENDPOINT_URL", LOCALSTACK);
+        vi.stubEnv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "true");
+        expect(
+          await sendWith({ region: "us-east-1", endpoint: LOCALSTACK }),
+        ).toEqual({ id: "ses-1" });
+      });
+
+      it("has the messageId with an empty AWS_ENDPOINT_URL", async () => {
+        vi.stubEnv("AWS_ENDPOINT_URL", "");
+        expect((await sendWith({ region: "us-east-1" })).messageId).toBe(
+          "<ses-1@email.amazonses.com>",
+        );
       });
     });
 

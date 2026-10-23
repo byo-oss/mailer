@@ -5,7 +5,7 @@ import {
   type MailResult,
   PermanentMailError,
 } from "./index";
-import { madeUpSesId, sesMessageId } from "./ses-message-id";
+import { envEndpointSet, madeUpSesId, sesMessageId } from "./ses-message-id";
 
 /** The part of the SES v2 `SendEmail` request this adapter sends. */
 export type SesSendEmailInput = {
@@ -67,7 +67,8 @@ function isPermanentSendError(error: unknown): boolean {
 // The region the client sent through, or undefined for a custom endpoint (not
 // SES writing the header), a client without a readable region, or any error:
 // the message is already accepted, so nothing here may throw. An endpoint set
-// in the environment, which the AWS SDK uses, doesn't show in the client's
+// in the environment, which the AWS SDK uses (unless
+// AWS_IGNORE_CONFIGURED_ENDPOINT_URLS is "true"), doesn't show in the client's
 // config, so the variables are read here.
 async function regionOf(client: SesMailerClient): Promise<string | undefined> {
   try {
@@ -77,8 +78,7 @@ async function regionOf(client: SesMailerClient): Promise<string | undefined> {
       !config ||
       config.endpoint !== undefined ||
       config.isCustomEndpoint ||
-      env.AWS_ENDPOINT_URL ||
-      env.AWS_ENDPOINT_URL_SESV2
+      envEndpointSet(env, ["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_SESV2"])
     ) {
       return undefined;
     }
@@ -136,8 +136,15 @@ const getCommandClass = () => {
  *   is the `Message-ID` SES wrote, `<id@email.amazonses.com>` in us-east-1.
  *   It is left out in other regions (AWS doesn't document the header's host,
  *   and only us-east-1 has been checked with real sends), for a custom
- *   `endpoint` (on the client, or in `AWS_ENDPOINT_URL` or
- *   `AWS_ENDPOINT_URL_SESV2`), and for a client whose region can't be read.
+ *   `endpoint` set on the client, and for a client whose region can't be
+ *   read. Setting `AWS_ENDPOINT_URL` or `AWS_ENDPOINT_URL_SESV2` (the AWS SDK
+ *   sends there) also leaves it out, unless
+ *   `AWS_IGNORE_CONFIGURED_ENDPOINT_URLS` is `"true"`, which makes the SDK
+ *   ignore those variables (only from `@smithy/core` 3.29.6, July 2026; an
+ *   older SDK still sends there and a `messageId` would be wrong, so update it
+ *   first); a code-set `endpoint` still omits it. The AWS
+ *   profile is not read: a profile `ignore_configured_endpoint_urls` is not
+ *   honoured, and a profile `endpoint_url` doesn't stop `messageId`.
  *   If SES returns no id, `id` is `"ses:<random uuid>"` rather than an
  *   error, which would send the message again.
  */
