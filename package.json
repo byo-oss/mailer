@@ -62,7 +62,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/byo-oss/mailer"
+    "url": "git+https://github.com/byo-oss/mailer.git"
   },
   "homepage": "https://github.com/byo-oss/mailer#readme",
   "publishConfig": {
