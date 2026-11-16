@@ -223,7 +223,7 @@ The email-sdk client sends opt-out usage telemetry (adapter names, counts, redac
 
 ## Write your own adapter
 
-Implement `Mailer` and run the contract suite against it:
+Implement `Mailer` and run the contract suite against it. `testMailer` needs vitest `^4.1.12 || >=5.0.5`, an optional peer:
 
 ```ts
 // byo-mailer-postmark/src/mailer.test.ts
