@@ -1,0 +1,22 @@
+---
+title: Upgrading
+description: What changed in each release of @byo-oss/mailer that you might notice.
+group: get started
+order: 3
+---
+
+Each section covers one release. Read the sections between your current version and the latest. Releases that changed nothing you could notice aren't listed.
+
+## 0.3.0
+
+The optional `vitest` peer is now `^4.1.12 || >=5.0.5` (it was `>=3`). It matters if your project has vitest installed, whether or not you use `testMailer`: with an older vitest, npm 7 or later stops with `ERESOLVE` and other package managers warn. Upgrade vitest to 4.1.12 or newer on the 4.x line, or 5.0.5 or newer.
+
+The old range admitted vitest versions affected by these advisories, none of them a bug in the mailer: [GHSA-9crc-q9x8-hgqq](https://github.com/advisories/GHSA-9crc-q9x8-hgqq), [GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp), [GHSA-8gvc-j273-4wm5](https://github.com/vitest-dev/vitest/security/advisories/GHSA-8gvc-j273-4wm5), [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9), [GHSA-qxg6-89mg-rqv8](https://github.com/advisories/GHSA-qxg6-89mg-rqv8), [GHSA-xp26-3454-mjgp](https://github.com/advisories/GHSA-xp26-3454-mjgp) and [GHSA-p458-7748-mcp3](https://github.com/advisories/GHSA-p458-7748-mcp3).
+
+Nothing else changed.
+
+## 0.2.0
+
+- `memoryMailer` rejects reserved headers, as the adapters do: `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, `Return-Path` and `Sender`, in any case. It throws a `PermanentMailError` and records nothing for that send. 0.1.1 only rejected malformed headers, so a test that passes one of these now fails. Put the reply address in `replyTo`. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
+- `wrapsMailer` and `sesMailer` honour `AWS_IGNORE_CONFIGURED_ENDPOINT_URLS=true`: they keep `messageId` when it is set, since the AWS SDK then ignores `AWS_ENDPOINT_URL*`. Only the exact string `true` counts, and a code-set `endpoint` still omits `messageId`. The AWS SDK reads the variable from `@smithy/core` 3.29.6 on.
+- The `@wraps.dev/email` peer is now `>=0.15.1`. Earlier versions wrote a non-ASCII `subject` as raw 8-bit text whenever `headers` were set. See [Wraps](/docs/mailer/wraps).

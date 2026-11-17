@@ -19,7 +19,7 @@ expect(mailer.sent[0]?.to).toBe("alice@example.com");
 
 `mailer.sent` holds copies of each message. `mailer.clear()` empties it.
 
-`memoryMailer` rejects the reserved headers, as the adapters do: `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, `Return-Path` and `Sender`, in any case. It throws a `PermanentMailError` and records nothing for that send. Before 0.2.0 it let them through; since 0.2.0 a test that passes one in `headers` fails: put the reply address in `replyTo` instead. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
+`memoryMailer` rejects the reserved headers, as the adapters do: `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, `Return-Path` and `Sender`, in any case. It throws a `PermanentMailError` and records nothing for that send. Put the reply address in `replyTo` instead. See [Delivery semantics](/docs/mailer/delivery#replyto-and-headers).
 
 | Option | Default | |
 |---|---|---|
